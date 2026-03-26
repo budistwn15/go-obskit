@@ -20,6 +20,7 @@ func New(cfg Config) *slog.Logger {
 	} else {
 		baseHandler = slog.NewJSONHandler(cfg.Output, opts)
 	}
+	baseHandler = applyMiddlewares(baseHandler, cfg.Middlewares)
 
 	host := ""
 	if h, err := os.Hostname(); err == nil {
@@ -39,6 +40,26 @@ func New(cfg Config) *slog.Logger {
 	)
 
 	return l
+}
+
+func applyMiddlewares(base slog.Handler, mws []HandlerMiddleware) slog.Handler {
+	if base == nil || len(mws) == 0 {
+		return base
+	}
+	h := base
+	for _, mw := range mws {
+		if mw == nil {
+			continue
+		}
+		func() {
+			defer func() { _ = recover() }()
+			next := mw(h)
+			if next != nil {
+				h = next
+			}
+		}()
+	}
+	return h
 }
 
 func With(l *slog.Logger, attrs ...slog.Attr) *slog.Logger {
