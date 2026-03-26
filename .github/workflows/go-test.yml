@@ -11,7 +11,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [".", "adapters", "examples"]
+        module:
+          - .
+          - adapters/nethttp
+          - adapters/ginx
+          - adapters/fiberx
+          - adapters/gormx
+          - examples
     defaults:
       run:
         working-directory: ${{ matrix.module }}
