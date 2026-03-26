@@ -52,8 +52,17 @@ func TestDisabledMiddleware_StdoutStillWorks(t *testing.T) {
 
 func TestDirectElasticFieldsMapping(t *testing.T) {
 	var hitAuth string
+	var hitBody string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"name":"es"}`))
+			return
+		}
 		hitAuth = r.Header.Get("Authorization")
+		b, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		hitBody = string(b)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"errors":false}`))
 	}))
@@ -68,6 +77,8 @@ func TestDirectElasticFieldsMapping(t *testing.T) {
 	cfg.BatchSize = 1
 	cfg.FlushInterval = 10 * time.Millisecond
 	cfg.MaxRetries = 0
+	cfg.IndexTimestampSuffix = true
+	cfg.IndexTimestampLayout = "20060102"
 
 	m := NewMiddleware(cfg)
 	defer func() { _ = m.Close(context.Background()) }()
@@ -88,13 +99,21 @@ func TestDirectElasticFieldsMapping(t *testing.T) {
 	if !strings.HasPrefix(hitAuth, "Basic ") {
 		t.Fatalf("expected basic auth header")
 	}
+	if !strings.Contains(hitBody, "direct-index-") {
+		t.Fatalf("expected timestamp suffixed index in bulk action, body=%s", hitBody)
+	}
 }
 
 func TestRetryAndSendSuccess(t *testing.T) {
 	var calls atomic.Int64
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"name":"es"}`))
+			return
+		}
 		if r.URL.Path != "/_bulk" {
-			t.Fatalf("expected /_bulk")
+			t.Fatalf("expected /_bulk or /")
 		}
 		_, _ = io.ReadAll(r.Body)
 		_ = r.Body.Close()

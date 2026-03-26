@@ -7,7 +7,7 @@ func TestForensicOptions(t *testing.T) {
 	if !opts.CaptureHeaders || !opts.CaptureRequestBody || !opts.CaptureResponseBody {
 		t.Fatalf("forensic options should enable detailed capture")
 	}
-	if !opts.LogRequestStart || !opts.LogErrorBodies || !opts.LogSuccessHeaders {
+	if !opts.LogRequestStart || !opts.LogErrorBodies || !opts.LogSuccessHeaders || !opts.LogSuccessBodies {
 		t.Fatalf("forensic options should enable detailed lifecycle logs")
 	}
 }
