@@ -2,6 +2,7 @@ package logger
 
 import (
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 )
@@ -22,7 +23,13 @@ type Config struct {
 	Output         io.Writer
 	AddSource      bool
 	InstanceID     string
+	// Middlewares allows optional handler wrapping (e.g. async external sinks).
+	// Middlewares are applied in order.
+	Middlewares []HandlerMiddleware
 }
+
+// HandlerMiddleware wraps a slog.Handler.
+type HandlerMiddleware func(next slog.Handler) slog.Handler
 
 func normalizeConfig(cfg Config) Config {
 	if cfg.Output == nil {
