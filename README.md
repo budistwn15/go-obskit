@@ -28,10 +28,13 @@ go get github.com/budistwn15/go-obskit
 go mod tidy
 ```
 
-Optional adapters module:
+Optional adapters (pick only what you use):
 
 ```bash
-go get github.com/budistwn15/go-obskit/adapters
+go get github.com/budistwn15/go-obskit/adapters/nethttp
+go get github.com/budistwn15/go-obskit/adapters/ginx
+go get github.com/budistwn15/go-obskit/adapters/fiberx
+go get github.com/budistwn15/go-obskit/adapters/gormx
 go mod tidy
 ```
 
@@ -485,10 +488,25 @@ Run lint locally with `golangci-lint`:
 golangci-lint run ./...
 ```
 
-For adapters/examples modules:
+For adapter/examples modules:
 
 ```bash
-cd adapters
+cd adapters/nethttp
+golangci-lint run ./...
+```
+
+```bash
+cd adapters/ginx
+golangci-lint run ./...
+```
+
+```bash
+cd adapters/fiberx
+golangci-lint run ./...
+```
+
+```bash
+cd adapters/gormx
 golangci-lint run ./...
 ```
 
@@ -800,11 +818,13 @@ Run race tests:
 go test -race ./...
 ```
 
-For adapters submodule:
+For adapter submodules:
 
 ```bash
-cd adapters
-go test ./...
+cd adapters/nethttp && go test ./...
+cd ../ginx && go test ./...
+cd ../fiberx && go test ./...
+cd ../gormx && go test ./...
 ```
 
 ## License
