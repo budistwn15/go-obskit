@@ -29,11 +29,11 @@ func TestForensicOptions(t *testing.T) {
 	if !opts.CaptureHeaders || !opts.CaptureRequestBody || !opts.CaptureResponseBody {
 		t.Fatalf("forensic options should enable detailed capture")
 	}
-	if !opts.LogRequestStart || !opts.LogErrorBodies || !opts.LogSuccessHeaders {
+	if !opts.LogRequestStart || !opts.LogErrorBodies || !opts.LogSuccessHeaders || !opts.LogSuccessBodies {
 		t.Fatalf("forensic options should enable detailed lifecycle logs")
 	}
-	if opts.SuccessSampleEvery <= 1 {
-		t.Fatalf("forensic options should enable conservative success sampling")
+	if opts.SuccessSampleEvery != 1 {
+		t.Fatalf("forensic options should keep full success visibility")
 	}
 	if opts.MaxBodyBytes < 4096 {
 		t.Fatalf("forensic options should keep bounded body capture with practical size")

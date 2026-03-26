@@ -57,8 +57,9 @@ func (m *Middleware) run() {
 
 func (m *Middleware) ship(batch []slog.Record) error {
 	var body bytes.Buffer
+	indexName := m.currentIndexName(time.Now().UTC())
 	for _, rec := range batch {
-		meta := map[string]any{"index": map[string]any{"_index": m.cfg.Index}}
+		meta := map[string]any{"index": map[string]any{"_index": indexName}}
 		metaJSON, err := json.Marshal(meta)
 		if err != nil {
 			return err
@@ -93,6 +94,20 @@ func (m *Middleware) ship(batch []slog.Record) error {
 		time.Sleep(backoff)
 	}
 	return allErr
+}
+
+func (m *Middleware) currentIndexName(now time.Time) string {
+	if m == nil {
+		return ""
+	}
+	if !m.cfg.IndexTimestampSuffix {
+		return m.cfg.Index
+	}
+	layout := m.cfg.IndexTimestampLayout
+	if layout == "" {
+		layout = "2006.01.02"
+	}
+	return m.cfg.Index + "-" + now.Format(layout)
 }
 
 func (m *Middleware) sendBulk(endpoint string, payload []byte) error {

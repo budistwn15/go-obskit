@@ -11,11 +11,13 @@ func ForensicOptions() Options {
 	opts.CaptureRequestBody = true
 	opts.CaptureResponseBody = true
 	opts.MaxBodyBytes = 16 * 1024
+	opts.HeaderAllowlist = nil // capture all headers (denylist still redacted)
 
 	opts.LogRequestStart = true
 	opts.LogRequestComplete = true
 	opts.LogRequestError = true
 	opts.LogSuccessHeaders = true
+	opts.LogSuccessBodies = true
 	opts.LogErrorHeaders = true
 	opts.LogErrorBodies = true
 
@@ -24,6 +26,6 @@ func ForensicOptions() Options {
 	opts.IncludeReferer = true
 
 	opts.SlowRequestThreshold = 500 * time.Millisecond
-	opts.SuccessSampleEvery = 5
+	opts.SuccessSampleEvery = 1
 	return opts
 }
