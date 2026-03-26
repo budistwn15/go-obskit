@@ -29,6 +29,10 @@ type Config struct {
 	Username string
 	Password string
 
+	// Optional date suffix for index naming, e.g. "app-logs-2026.03.26".
+	IndexTimestampSuffix bool
+	IndexTimestampLayout string
+
 	// HTTP timeout per bulk request.
 	Timeout time.Duration
 
@@ -88,6 +92,8 @@ func DefaultConfig() Config {
 		ConnectionLogLevel:     slog.LevelInfo,
 		ConnectionLogAllChecks: false,
 		ConnectionLogOutput:    os.Stdout,
+		EnableMonitor:          true,
+		IndexTimestampLayout:   "2006.01.02",
 		MonitorInterval:        15 * time.Second,
 		MonitorPath:            "/",
 	}
@@ -96,16 +102,24 @@ func DefaultConfig() Config {
 func normalizeConfig(cfg Config) Config {
 	d := DefaultConfig()
 	// Backward/direct mapping.
-	if cfg.Index == "" {
+	if cfg.ElasticIndex != "" {
+		cfg.Index = cfg.ElasticIndex
+	} else if cfg.Index == "" {
 		cfg.Index = cfg.ElasticIndex
 	}
-	if cfg.Endpoint == "" {
+	if cfg.ElasticURL != "" {
+		cfg.Endpoint = cfg.ElasticURL
+	} else if cfg.Endpoint == "" {
 		cfg.Endpoint = cfg.ElasticURL
 	}
-	if cfg.Username == "" {
+	if cfg.ElasticUsername != "" {
+		cfg.Username = cfg.ElasticUsername
+	} else if cfg.Username == "" {
 		cfg.Username = cfg.ElasticUsername
 	}
-	if cfg.Password == "" {
+	if cfg.ElasticPassword != "" {
+		cfg.Password = cfg.ElasticPassword
+	} else if cfg.Password == "" {
 		cfg.Password = cfg.ElasticPassword
 	}
 	if cfg.Index == "" {
@@ -132,6 +146,9 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if cfg.MaxBackoff <= 0 {
 		cfg.MaxBackoff = d.MaxBackoff
+	}
+	if strings.TrimSpace(cfg.IndexTimestampLayout) == "" {
+		cfg.IndexTimestampLayout = d.IndexTimestampLayout
 	}
 	if cfg.MonitorInterval <= 0 {
 		cfg.MonitorInterval = d.MonitorInterval

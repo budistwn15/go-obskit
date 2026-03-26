@@ -107,7 +107,8 @@ func captureResponseMeta(c *gin.Context, w *responseWriter, opts Options) httplo
 	if opts.CaptureHeaders {
 		meta.Headers = httplog.FilterHTTPHeaders(c.Writer.Header(), opts.HeaderAllowlist, opts.HeaderDenylist)
 	}
-	if opts.CaptureResponseBody && opts.LogErrorBodies {
+	shouldLogRespBody := (meta.StatusCode >= 400 && opts.LogErrorBodies) || (meta.StatusCode < 400 && opts.LogSuccessBodies)
+	if opts.CaptureResponseBody && shouldLogRespBody {
 		contentType := c.Writer.Header().Get("Content-Type")
 		if httplog.IsSafeBodyContentType(contentType) {
 			bodyCap := httplog.CaptureBody(contentType, w.body.Bytes(), opts.MaxBodyBytes, opts.BodyJSONDenylist)

@@ -44,9 +44,9 @@ func TestMiddleware_CorrelationPropagationAndBodyRestore(t *testing.T) {
 	opts.CaptureRequestBody = true
 	opts.LogRequestComplete = true
 	opts.CorrelationHeader = "X-Correlation-ID"
-	
+
 	mw := Middleware(log, opts)
-	
+
 	next := http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			body, _ := io.ReadAll(r.Body)
@@ -57,21 +57,21 @@ func TestMiddleware_CorrelationPropagationAndBodyRestore(t *testing.T) {
 			_, _ = w.Write([]byte("ok"))
 		},
 	)
-	
+
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/orders?id=1", strings.NewReader(`{"name":"john"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Correlation-ID", "corr-1")
 	rec := httptest.NewRecorder()
-	
+
 	mw(next).ServeHTTP(rec, req)
-	
+
 	if rec.Header().Get("X-Correlation-ID") != "corr-1" {
 		t.Fatalf("missing propagated correlation header")
 	}
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status not captured")
 	}
-	
+
 	logs := parseLines(t, buf.String())
 	if len(logs) == 0 {
 		t.Fatalf("expected log events")
@@ -98,7 +98,7 @@ func TestMiddleware_SuccessSamplingKeepsSlow(t *testing.T) {
 	opts := DefaultOptions()
 	opts.SuccessSampleEvery = 1000
 	opts.SlowRequestThreshold = 1 * time.Millisecond
-	
+
 	mw := Middleware(log, opts)
 	next := http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +110,7 @@ func TestMiddleware_SuccessSamplingKeepsSlow(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/health", nil)
 	rec := httptest.NewRecorder()
 	mw(next).ServeHTTP(rec, req)
-	
+
 	logs := parseLines(t, buf.String())
 	if len(logs) == 0 {
 		t.Fatalf("slow events should not be sampled out")
@@ -121,5 +121,57 @@ func TestMiddleware_SuccessSamplingKeepsSlow(t *testing.T) {
 	}
 	if _, ok := last["threshold_ms"]; !ok {
 		t.Fatalf("expected threshold_ms")
+	}
+}
+
+func TestMiddleware_ForensicCapturesBodiesAndHeadersOnSuccess(t *testing.T) {
+	var buf bytes.Buffer
+	log := logger.New(
+		logger.Config{
+			ServiceName: "svc",
+			Environment: "production",
+			Level:       logger.LevelInfo,
+			Output:      &buf,
+		},
+	)
+	opts := ForensicOptions()
+	opts.SuccessSampleEvery = 1
+
+	mw := Middleware(log, opts)
+	next := http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Upstream", "auth-service")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true,"token":"abc123"}`))
+		},
+	)
+	req := httptest.NewRequest(
+		http.MethodPost, "http://example.com/api/v1/auth/login?from=web",
+		strings.NewReader(`{"email":"a@b.c","password":"secret"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer mytoken")
+	req.Header.Set("X-Correlation-ID", "corr-1")
+	rec := httptest.NewRecorder()
+
+	mw(next).ServeHTTP(rec, req)
+	logs := parseLines(t, buf.String())
+	if len(logs) == 0 {
+		t.Fatalf("expected logs")
+	}
+	last := logs[len(logs)-1]
+	if _, ok := last["http.request.body"]; !ok {
+		t.Fatalf("expected request body")
+	}
+	if _, ok := last["http.response.body"]; !ok {
+		t.Fatalf("expected response body on success")
+	}
+	reqHeaders, ok := last["http.request.headers"].(map[string]any)
+	if !ok || reqHeaders["Authorization"] != "***redacted***" {
+		t.Fatalf("expected request headers with redaction")
+	}
+	if _, ok := last["http.response.headers"]; !ok {
+		t.Fatalf("expected response headers")
 	}
 }

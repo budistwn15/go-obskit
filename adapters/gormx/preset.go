@@ -1,11 +1,13 @@
 package gormx
 
 import "context"
+import gormlogger "gorm.io/gorm/logger"
 
 // TracingOptions returns an opt-in verbose profile for deep query tracing.
 // Use this only on targeted services/environments due higher log volume.
 func TracingOptions() Options {
 	opts := DefaultOptions()
+	opts.Level = gormlogger.Info
 	opts.LogSuccess = true
 	opts.LogSQL = false
 	opts.LogSQLOnSuccess = true
