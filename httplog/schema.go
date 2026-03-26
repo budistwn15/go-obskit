@@ -82,13 +82,27 @@ func EventAttrs(meta EventMeta) []slog.Attr {
 	attrs := []slog.Attr{
 		slog.Int64("duration_ms", meta.DurationMS),
 		slog.Bool("slow", meta.Slow),
-		slog.String("correlation_id", meta.CorrelationID),
-		slog.String("request_id", meta.RequestID),
-		slog.String("trace_id", meta.TraceID),
-		slog.String("span_id", meta.SpanID),
-		slog.String("layer", meta.Layer),
-		slog.String("component", meta.Component),
-		slog.String("operation", meta.Operation),
+	}
+	if meta.CorrelationID != "" {
+		attrs = append(attrs, slog.String("correlation_id", meta.CorrelationID))
+	}
+	if meta.RequestID != "" {
+		attrs = append(attrs, slog.String("request_id", meta.RequestID))
+	}
+	if meta.TraceID != "" {
+		attrs = append(attrs, slog.String("trace_id", meta.TraceID))
+	}
+	if meta.SpanID != "" {
+		attrs = append(attrs, slog.String("span_id", meta.SpanID))
+	}
+	if meta.Layer != "" {
+		attrs = append(attrs, slog.String("layer", meta.Layer))
+	}
+	if meta.Component != "" {
+		attrs = append(attrs, slog.String("component", meta.Component))
+	}
+	if meta.Operation != "" {
+		attrs = append(attrs, slog.String("operation", meta.Operation))
 	}
 	if meta.SlowThresholdMS > 0 {
 		attrs = append(attrs, slog.Int64("threshold_ms", meta.SlowThresholdMS))

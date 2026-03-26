@@ -49,7 +49,8 @@ func captureResponseMeta(c *fiber.Ctx, opts Options) httplog.ResponseMeta {
 	if opts.CaptureHeaders {
 		meta.Headers = httplog.FilterHeaders(responseHeaders(c), opts.HeaderAllowlist, opts.HeaderDenylist)
 	}
-	if opts.CaptureResponseBody && opts.LogErrorBodies {
+	shouldLogRespBody := (meta.StatusCode >= 400 && opts.LogErrorBodies) || (meta.StatusCode < 400 && opts.LogSuccessBodies)
+	if opts.CaptureResponseBody && shouldLogRespBody {
 		contentType := c.GetRespHeader("Content-Type")
 		bodyCap := httplog.CaptureBody(contentType, c.Response().Body(), opts.MaxBodyBytes, opts.BodyJSONDenylist)
 		meta.ResponseBody = bodyCap.Value
