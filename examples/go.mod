@@ -4,7 +4,10 @@ go 1.25.0
 
 require (
 	github.com/budistwn15/go-obskit v0.0.0
-	github.com/budistwn15/go-obskit/adapters v0.0.0
+	github.com/budistwn15/go-obskit/adapters/fiberx v0.0.0
+	github.com/budistwn15/go-obskit/adapters/ginx v0.0.0
+	github.com/budistwn15/go-obskit/adapters/gormx v0.0.0
+	github.com/budistwn15/go-obskit/adapters/nethttp v0.0.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/gofiber/fiber/v2 v2.52.12
 	gorm.io/gorm v1.31.1
@@ -55,4 +58,10 @@ require (
 
 replace github.com/budistwn15/go-obskit => ..
 
-replace github.com/budistwn15/go-obskit/adapters => ../adapters
+replace github.com/budistwn15/go-obskit/adapters/nethttp => ../adapters/nethttp
+
+replace github.com/budistwn15/go-obskit/adapters/ginx => ../adapters/ginx
+
+replace github.com/budistwn15/go-obskit/adapters/fiberx => ../adapters/fiberx
+
+replace github.com/budistwn15/go-obskit/adapters/gormx => ../adapters/gormx
