@@ -11,50 +11,15 @@ import (
 
 	"github.com/budistwn15/go-obskit/adapters/ginx"
 	"github.com/budistwn15/go-obskit/adapters/gormx"
-	"github.com/budistwn15/go-obskit/elastic"
 	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/sinkenv"
 	"github.com/gin-gonic/gin"
 	gormlogger "gorm.io/gorm/logger"
 )
 
 func main() {
-	elkCfg := elastic.Config{
-		Enabled:         envBool("OBSKIT_ELASTIC_ENABLED", false),
-		ElasticURL:      envString("OBSKIT_ELASTIC_URL", ""),
-		ElasticIndex:    envString("OBSKIT_ELASTIC_INDEX", "app-logs"),
-		ElasticUsername: envString("OBSKIT_ELASTIC_USERNAME", ""),
-		ElasticPassword: envString("OBSKIT_ELASTIC_PASSWORD", ""),
-		APIKey:          envString("OBSKIT_ELASTIC_API_KEY", ""),
-
-		IndexTimestampSuffix: envBool("OBSKIT_ELASTIC_INDEX_TIMESTAMP_SUFFIX", true),
-		IndexTimestampLayout: envString("OBSKIT_ELASTIC_INDEX_TIMESTAMP_LAYOUT", "2006.01.02"),
-		IndexPattern:         envString("OBSKIT_ELASTIC_INDEX_PATTERN", envString("OBSKIT_ELASTIC_INDEX", "app-logs")+"-*"),
-
-		Timeout:       envDurationMS("OBSKIT_ELASTIC_TIMEOUT_MS", 2000),
-		QueueSize:     envInt("OBSKIT_ELASTIC_QUEUE_SIZE", 2048),
-		BatchSize:     envInt("OBSKIT_ELASTIC_BATCH_SIZE", 200),
-		FlushInterval: envDurationMS("OBSKIT_ELASTIC_FLUSH_INTERVAL_MS", 1000),
-
-		BlockOnQueueFull: envBool("OBSKIT_ELASTIC_BLOCK_ON_QUEUE_FULL", false),
-		MaxRetries:       envInt("OBSKIT_ELASTIC_MAX_RETRIES", 3),
-		RetryBackoff:     envDurationMS("OBSKIT_ELASTIC_RETRY_BACKOFF_MS", 150),
-		MaxBackoff:       envDurationMS("OBSKIT_ELASTIC_MAX_BACKOFF_MS", 2000),
-
-		EnableMonitor:   envBool("OBSKIT_ELASTIC_ENABLE_MONITOR", true),
-		MonitorInterval: envDurationMS("OBSKIT_ELASTIC_MONITOR_INTERVAL_MS", 15000),
-		MonitorPath:     envString("OBSKIT_ELASTIC_MONITOR_PATH", "/"),
-
-		Bootstrap:               envBool("OBSKIT_ELASTIC_BOOTSTRAP", true),
-		BootstrapOnStart:        envBool("OBSKIT_ELASTIC_BOOTSTRAP_ON_START", true),
-		PipelineName:            envString("OBSKIT_ELASTIC_PIPELINE_NAME", "obskit-default-pipeline"),
-		TemplateName:            envString("OBSKIT_ELASTIC_TEMPLATE_NAME", "obskit-default-template"),
-		ApplyPipelineToExisting: envBool("OBSKIT_ELASTIC_APPLY_PIPELINE_TO_EXISTING", true),
-
-		ConnectionLogToStdout:  envBool("OBSKIT_ELASTIC_CONNECTION_LOG_TO_STDOUT", true),
-		ConnectionLogAllChecks: envBool("OBSKIT_ELASTIC_CONNECTION_LOG_ALL_CHECKS", false),
-	}
-	elkMW := elastic.NewMiddleware(elkCfg)
-	defer func() { _ = elkMW.Close(context.Background()) }()
+	sink := sinkenv.FromEnv()
+	defer func() { _ = sink.Close(context.Background()) }()
 
 	log := logger.New(logger.Config{
 		ServiceName:    envString("APP_NAME", "config-from-env"),
@@ -64,7 +29,7 @@ func main() {
 		Format:         logger.Format(strings.ToLower(envString("LOG_FORMAT", "json"))),
 		AddSource:      envBool("LOG_ADD_SOURCE", false),
 		InstanceID:     envString("LOG_INSTANCE_ID", ""),
-		Middlewares:    []logger.HandlerMiddleware{elkMW.LoggerMiddleware()},
+		Middlewares:    sink.Middlewares,
 	})
 
 	var httpOpts ginx.Options
@@ -106,8 +71,7 @@ func main() {
 	})
 
 	log.Info("config-from-env ready",
-		slog.Bool("elastic_enabled", elkCfg.Enabled),
-		slog.String("elastic_index", elkCfg.ElasticIndex),
+		slog.String("sink_provider", sink.Provider),
 		slog.Bool("http_forensic", envBool("OBSKIT_HTTP_FORENSIC", false)),
 		slog.Bool("gorm_tracing", envBool("OBSKIT_GORM_TRACING", false)),
 	)

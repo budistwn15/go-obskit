@@ -10,6 +10,7 @@ type Profile string
 const (
 	ProfileMinimal Profile = "minimal"
 	ProfileFull    Profile = "full"
+	ProfileLoki    Profile = "loki"
 )
 
 func Defaults() []Entry {
@@ -20,8 +21,20 @@ func DefaultsByProfile(profile Profile) []Entry {
 	switch profile {
 	case ProfileFull:
 		return fullDefaults()
+	case ProfileLoki:
+		return lokiDefaults()
 	default:
 		return minimalDefaults()
+	}
+}
+
+func lokiDefaults() []Entry {
+	return []Entry{
+		{Key: "APP_NAME", Value: "my-service"},
+		{Key: "APP_ENV", Value: "production"},
+		{Key: "LOG_LEVEL", Value: "info"},
+		{Key: "OBSKIT_SINK_PROVIDER", Value: "loki"},
+		{Key: "OBSKIT_LOKI_URL", Value: "http://localhost:3100"},
 	}
 }
 
@@ -30,6 +43,7 @@ func minimalDefaults() []Entry {
 		{Key: "APP_NAME", Value: "my-service"},
 		{Key: "APP_ENV", Value: "production"},
 		{Key: "LOG_LEVEL", Value: "info"},
+		{Key: "OBSKIT_SINK_PROVIDER", Value: "stdout"},
 		{Key: "OBSKIT_ELASTIC_ENABLED", Value: "false"},
 		{Key: "OBSKIT_ELASTIC_URL", Value: "http://localhost:9200"},
 		{Key: "OBSKIT_ELASTIC_INDEX", Value: "xeanees-logs"},
@@ -47,6 +61,7 @@ func fullDefaults() []Entry {
 		{Key: "LOG_FORMAT", Value: "json"},
 		{Key: "LOG_ADD_SOURCE", Value: "false"},
 		{Key: "LOG_INSTANCE_ID", Value: ""},
+		{Key: "OBSKIT_SINK_PROVIDER", Value: "stdout"},
 
 		{Key: "OBSKIT_HTTP_FORENSIC", Value: "false"},
 		{Key: "OBSKIT_HTTP_CAPTURE_HEADERS", Value: "false"},
@@ -107,5 +122,38 @@ func fullDefaults() []Entry {
 		{Key: "OBSKIT_ELASTIC_APPLY_PIPELINE_TO_EXISTING", Value: "true"},
 		{Key: "OBSKIT_ELASTIC_CONNECTION_LOG_TO_STDOUT", Value: "true"},
 		{Key: "OBSKIT_ELASTIC_CONNECTION_LOG_ALL_CHECKS", Value: "false"},
+
+		{Key: "OBSKIT_HTTP_SINK_ENABLED", Value: "false"},
+		{Key: "OBSKIT_HTTP_SINK_URL", Value: "http://localhost:8088/logs"},
+		{Key: "OBSKIT_HTTP_SINK_FORMAT", Value: "ndjson"},
+		{Key: "OBSKIT_HTTP_SINK_HEADERS", Value: "X-Api-Key:token"},
+		{Key: "OBSKIT_HTTP_SINK_API_KEY", Value: ""},
+		{Key: "OBSKIT_HTTP_SINK_USERNAME", Value: ""},
+		{Key: "OBSKIT_HTTP_SINK_PASSWORD", Value: ""},
+		{Key: "OBSKIT_HTTP_SINK_TIMEOUT_MS", Value: "2000"},
+		{Key: "OBSKIT_HTTP_SINK_QUEUE_SIZE", Value: "2048"},
+		{Key: "OBSKIT_HTTP_SINK_BATCH_SIZE", Value: "200"},
+		{Key: "OBSKIT_HTTP_SINK_FLUSH_INTERVAL_MS", Value: "1000"},
+		{Key: "OBSKIT_HTTP_SINK_BLOCK_ON_QUEUE_FULL", Value: "false"},
+		{Key: "OBSKIT_HTTP_SINK_MAX_RETRIES", Value: "3"},
+		{Key: "OBSKIT_HTTP_SINK_RETRY_BACKOFF_MS", Value: "150"},
+		{Key: "OBSKIT_HTTP_SINK_MAX_BACKOFF_MS", Value: "2000"},
+		{Key: "OBSKIT_HTTP_SINK_CONNECTION_LOG_TO_STDOUT", Value: "true"},
+
+		{Key: "OBSKIT_LOKI_ENABLED", Value: "false"},
+		{Key: "OBSKIT_LOKI_URL", Value: "http://localhost:3100"},
+		{Key: "OBSKIT_LOKI_LABELS", Value: "source:obskit,env:production"},
+		{Key: "OBSKIT_LOKI_API_KEY", Value: ""},
+		{Key: "OBSKIT_LOKI_USERNAME", Value: ""},
+		{Key: "OBSKIT_LOKI_PASSWORD", Value: ""},
+		{Key: "OBSKIT_LOKI_TIMEOUT_MS", Value: "2000"},
+		{Key: "OBSKIT_LOKI_QUEUE_SIZE", Value: "2048"},
+		{Key: "OBSKIT_LOKI_BATCH_SIZE", Value: "200"},
+		{Key: "OBSKIT_LOKI_FLUSH_INTERVAL_MS", Value: "1000"},
+		{Key: "OBSKIT_LOKI_BLOCK_ON_QUEUE_FULL", Value: "false"},
+		{Key: "OBSKIT_LOKI_MAX_RETRIES", Value: "3"},
+		{Key: "OBSKIT_LOKI_RETRY_BACKOFF_MS", Value: "150"},
+		{Key: "OBSKIT_LOKI_MAX_BACKOFF_MS", Value: "2000"},
+		{Key: "OBSKIT_LOKI_CONNECTION_LOG_TO_STDOUT", Value: "true"},
 	}
 }

@@ -62,12 +62,16 @@ func TestUpsertEnvExample_CreateWhenEnabled(t *testing.T) {
 
 func TestDefaultsByProfile(t *testing.T) {
 	min := DefaultsByProfile(ProfileMinimal)
+	loki := DefaultsByProfile(ProfileLoki)
 	full := DefaultsByProfile(ProfileFull)
-	if len(min) == 0 || len(full) == 0 {
+	if len(min) == 0 || len(full) == 0 || len(loki) == 0 {
 		t.Fatalf("profiles should not be empty")
 	}
-	if len(min) != 8 {
-		t.Fatalf("minimal profile should contain exactly 8 keys, got=%d", len(min))
+	if len(min) != 9 {
+		t.Fatalf("minimal profile should contain exactly 9 keys, got=%d", len(min))
+	}
+	if len(loki) != 5 {
+		t.Fatalf("loki profile should contain exactly 5 keys, got=%d", len(loki))
 	}
 	if len(full) <= len(min) {
 		t.Fatalf("full profile should contain more entries than minimal")

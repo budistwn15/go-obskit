@@ -35,6 +35,9 @@ go get github.com/budistwn15/go-obskit/adapters/nethttp
 go get github.com/budistwn15/go-obskit/adapters/ginx
 go get github.com/budistwn15/go-obskit/adapters/fiberx
 go get github.com/budistwn15/go-obskit/adapters/gormx
+go get github.com/budistwn15/go-obskit/sinkenv
+go get github.com/budistwn15/go-obskit/httpsink
+go get github.com/budistwn15/go-obskit/lokisink
 go mod tidy
 ```
 
@@ -43,16 +46,18 @@ Note: replace `OWNER/REPO` in the badge URL above with your actual repository pa
 ## Environment Variables (.env)
 
 Use [`.env.example`](/Users/budisetiawan/Documents/bri/rsp/dependencies/obskit/.env.example) as minimal starter.
+If you want Loki-only quick setup (5 keys), use [`.env.loki.example`](/Users/budisetiawan/Documents/bri/rsp/dependencies/obskit/.env.loki.example).
 For advanced knobs, see [`.env.full.example`](/Users/budisetiawan/Documents/bri/rsp/dependencies/obskit/.env.full.example).
 
 Important:
 - `obskit` **does not auto-read** `.env`.
-- Application should load env and map values into `logger.Config`, adapter options, `elastic.Config`, `gormx.Options`, etc.
+- Application should load env and map values into `logger.Config`, adapter options, sink configs (`sinkenv`/`elastic`/`httpsink`), `gormx.Options`, etc.
 
 Minimal vars:
 - `APP_NAME`
 - `APP_ENV`
 - `LOG_LEVEL`
+- `OBSKIT_SINK_PROVIDER` (`stdout` / `elastic` / `loki` / `http`)
 - `OBSKIT_ELASTIC_ENABLED` (default `false`)
 - `OBSKIT_ELASTIC_URL`
 - `OBSKIT_ELASTIC_INDEX`
@@ -76,6 +81,12 @@ Full profile:
 
 ```bash
 go run github.com/budistwn15/go-obskit/cmd/obskit-envsync@latest -profile full
+```
+
+Loki minimal profile (5 keys):
+
+```bash
+go run github.com/budistwn15/go-obskit/cmd/obskit-envsync@latest -profile loki
 ```
 
 Behavior:
@@ -300,6 +311,57 @@ log := logger.New(logger.Config{
 defer elkMW.Close(context.Background())
 ```
 
+### sinkenv (provider from ENV, optional)
+
+Select sink provider only via env:
+
+```env
+OBSKIT_SINK_PROVIDER=stdout   # stdout | elastic | loki | http
+```
+
+```go
+sink := sinkenv.FromEnv()
+defer sink.Close(context.Background())
+
+log := logger.New(logger.Config{
+	ServiceName: "my-service",
+	Environment: "production",
+	Middlewares: sink.Middlewares,
+})
+```
+
+`stdout` remains default and safe fallback when provider/config is invalid.
+
+### httpsink (generic HTTP sink, optional)
+
+Use this for any backend that accepts HTTP log ingestion.
+
+```go
+mw := httpsink.NewMiddleware(httpsink.Config{
+	Enabled:  true,
+	Endpoint: "https://collector.example.com/logs",
+	Format:   httpsink.FormatNDJSON, // or FormatJSONArray
+	Headers: map[string]string{
+		"X-API-Key": "token",
+	},
+})
+defer mw.Close(context.Background())
+```
+
+### lokisink (Grafana Loki, optional)
+
+```go
+mw := lokisink.NewMiddleware(lokisink.Config{
+	Enabled:  true,
+	Endpoint: "http://localhost:3100", // /loki/api/v1/push akan ditambahkan otomatis
+	Labels: map[string]string{
+		"service": "billing-api",
+		"env":     "production",
+	},
+})
+defer mw.Close(context.Background())
+```
+
 ### adapters/gormx
 
 Attach `gormx.New` as GORM logger implementation.
@@ -406,6 +468,17 @@ if ex, ok := errorsx.Extract(err); ok {
 - `outbound.NewTransport(base, log, opts) http.RoundTripper`
 - `outbound.ForensicOptions() Options`
 - `outbound.WrapClient(client, log, opts) *http.Client`
+
+### sinks
+
+- `sinkenv.FromEnv() Runtime`
+- `Runtime.Close(ctx) error`
+- `httpsink.NewMiddleware(cfg) *httpsink.Middleware`
+- `(*httpsink.Middleware).LoggerMiddleware() logger.HandlerMiddleware`
+- `(*httpsink.Middleware).Close(ctx) error`
+- `lokisink.NewMiddleware(cfg) *lokisink.Middleware`
+- `(*lokisink.Middleware).LoggerMiddleware() logger.HandlerMiddleware`
+- `(*lokisink.Middleware).Close(ctx) error`
 
 ### gormx
 
