@@ -32,6 +32,7 @@ type Config struct {
 	// Optional date suffix for index naming, e.g. "app-logs-2026.03.26".
 	IndexTimestampSuffix bool
 	IndexTimestampLayout string
+	IndexPattern         string
 
 	// HTTP timeout per bulk request.
 	Timeout time.Duration
@@ -73,29 +74,42 @@ type Config struct {
 	MonitorInterval time.Duration
 	MonitorPath     string
 	OnMonitor       func(ConnectionStatus)
+
+	// Optional bootstrap for ingest pipeline + index template.
+	Bootstrap               bool
+	BootstrapOnStart        bool
+	PipelineName            string
+	TemplateName            string
+	ApplyPipelineToExisting bool
 }
 
 func DefaultConfig() Config {
 	return Config{
-		Enabled:                false,
-		Endpoint:               "",
-		Index:                  "app-logs",
-		Timeout:                2 * time.Second,
-		QueueSize:              2048,
-		BatchSize:              200,
-		FlushInterval:          1 * time.Second,
-		MaxRetries:             3,
-		RetryBackoff:           150 * time.Millisecond,
-		MaxBackoff:             2 * time.Second,
-		RecoverInternally:      true,
-		ConnectionLogToStdout:  true,
-		ConnectionLogLevel:     slog.LevelInfo,
-		ConnectionLogAllChecks: false,
-		ConnectionLogOutput:    os.Stdout,
-		EnableMonitor:          true,
-		IndexTimestampLayout:   "2006.01.02",
-		MonitorInterval:        15 * time.Second,
-		MonitorPath:            "/",
+		Enabled:                 false,
+		Endpoint:                "",
+		Index:                   "app-logs",
+		Timeout:                 2 * time.Second,
+		QueueSize:               2048,
+		BatchSize:               200,
+		FlushInterval:           1 * time.Second,
+		MaxRetries:              3,
+		RetryBackoff:            150 * time.Millisecond,
+		MaxBackoff:              2 * time.Second,
+		RecoverInternally:       true,
+		ConnectionLogToStdout:   true,
+		ConnectionLogLevel:      slog.LevelInfo,
+		ConnectionLogAllChecks:  false,
+		ConnectionLogOutput:     os.Stdout,
+		EnableMonitor:           true,
+		IndexTimestampLayout:    "2006.01.02",
+		IndexPattern:            "app-logs-*",
+		MonitorInterval:         15 * time.Second,
+		MonitorPath:             "/",
+		Bootstrap:               true,
+		BootstrapOnStart:        true,
+		PipelineName:            "obskit-default-pipeline",
+		TemplateName:            "obskit-default-template",
+		ApplyPipelineToExisting: true,
 	}
 }
 
@@ -150,6 +164,13 @@ func normalizeConfig(cfg Config) Config {
 	if strings.TrimSpace(cfg.IndexTimestampLayout) == "" {
 		cfg.IndexTimestampLayout = d.IndexTimestampLayout
 	}
+	if strings.TrimSpace(cfg.IndexPattern) == "" {
+		if strings.TrimSpace(cfg.Index) != "" {
+			cfg.IndexPattern = cfg.Index + "-*"
+		} else {
+			cfg.IndexPattern = d.IndexPattern
+		}
+	}
 	if cfg.MonitorInterval <= 0 {
 		cfg.MonitorInterval = d.MonitorInterval
 	}
@@ -164,6 +185,12 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if cfg.ConnectionLogLevel == 0 {
 		cfg.ConnectionLogLevel = d.ConnectionLogLevel
+	}
+	if strings.TrimSpace(cfg.PipelineName) == "" {
+		cfg.PipelineName = d.PipelineName
+	}
+	if strings.TrimSpace(cfg.TemplateName) == "" {
+		cfg.TemplateName = d.TemplateName
 	}
 	// Safety-first default.
 	cfg.RecoverInternally = true

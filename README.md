@@ -40,6 +40,49 @@ go mod tidy
 
 Note: replace `OWNER/REPO` in the badge URL above with your actual repository path.
 
+## Environment Variables (.env)
+
+Use [`.env.example`](/Users/budisetiawan/Documents/bri/rsp/dependencies/obskit/.env.example) as minimal starter.
+For advanced knobs, see [`.env.full.example`](/Users/budisetiawan/Documents/bri/rsp/dependencies/obskit/.env.full.example).
+
+Important:
+- `obskit` **does not auto-read** `.env`.
+- Application should load env and map values into `logger.Config`, adapter options, `elastic.Config`, `gormx.Options`, etc.
+
+Minimal vars:
+- `APP_NAME`
+- `APP_ENV`
+- `LOG_LEVEL`
+- `OBSKIT_ELASTIC_ENABLED` (default `false`)
+- `OBSKIT_ELASTIC_URL`
+- `OBSKIT_ELASTIC_INDEX`
+- `OBSKIT_ELASTIC_USERNAME` 
+- `OBSKIT_ELASTIC_PASSWORD` 
+
+For full tracing / advanced tuning:
+- `OBSKIT_HTTP_FORENSIC=true`
+- `OBSKIT_GORM_TRACING=true`
+
+Example loader/config wiring:
+- [`examples/config-from-env/main.go`](/Users/budisetiawan/Documents/bri/rsp/dependencies/obskit/examples/config-from-env/main.go)
+
+Safe env injector utility (optional):
+
+```bash
+go run github.com/budistwn15/go-obskit/cmd/obskit-envsync@latest
+```
+
+Full profile:
+
+```bash
+go run github.com/budistwn15/go-obskit/cmd/obskit-envsync@latest -profile full
+```
+
+Behavior:
+- If `.env.example` exists: missing obskit keys are appended.
+- If `.env.example` does not exist: skip and exit success (no error).
+- Existing values are preserved (no override).
+
 ## Quick Start
 
 ```go
@@ -216,6 +259,47 @@ _ = resp
 _ = err
 ```
 
+### elastic (optional ELK/OpenSearch sink)
+
+```go
+elkMW := elastic.NewMiddleware(elastic.Config{
+	Enabled:         true,
+	ElasticURL:      "http://localhost:9200",
+	ElasticIndex:    "obskit-logs",
+	ElasticUsername: "elastic",
+	ElasticPassword: "secret",
+
+	IndexTimestampSuffix: true,    
+	IndexTimestampLayout: "2006.01.02",
+	IndexPattern:         "obskit-logs-*",
+
+	Bootstrap:               true,
+	BootstrapOnStart:        true,
+	PipelineName:            "obskit-default-pipeline",
+	TemplateName:            "obskit-default-template",
+	ApplyPipelineToExisting: true,
+
+	Timeout:       2 * time.Second,
+	MaxRetries:    3,
+	RetryBackoff:  150 * time.Millisecond,
+	MaxBackoff:    2 * time.Second,
+	QueueSize:     2048,
+	BatchSize:     200,
+	FlushInterval: 1 * time.Second,
+
+	BlockOnQueueFull: false,
+	EnableMonitor:    true,
+	MonitorInterval:  15 * time.Second,
+})
+
+log := logger.New(logger.Config{
+	ServiceName: "my-service",
+	Environment: "production",
+	Middlewares: []logger.HandlerMiddleware{elkMW.LoggerMiddleware()},
+})
+defer elkMW.Close(context.Background())
+```
+
 ### adapters/gormx
 
 Attach `gormx.New` as GORM logger implementation.
@@ -239,28 +323,6 @@ gormLog := gormx.New(log, opts)
 db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormLog})
 _ = db
 _ = err
-```
-
-Tips tracing query error:
-
-- lihat `db.statement` untuk query yang dieksekusi
-- lihat `db.query_type` untuk tipe operasi (`SELECT`, `UPDATE`, dst)
-- lihat `layer=repository`, `component=gorm`, `operation=db.query` untuk lokasi logis
-- gunakan `ErrorDetailFunc` untuk menambah konteks domain seperti `query_name`, `expected`, `actual`
-
-Tracing profile cepat pakai:
-
-```go
-opts := gormx.TracingOptions()
-opts.SuccessSampleEvery = 10 // opsional, sample success query
-```
-
-Per query context (opsional):
-
-```go
-ctx := gormx.WithQueryName(context.Background(), "GetActiveUsers")
-ctx = gormx.WithExpected(ctx, "rows_affected > 0")
-db.WithContext(ctx).Find(&users)
 ```
 
 ### job/scheduler logging
@@ -399,11 +461,6 @@ ctx = logger.WithContextAttrs(ctx,
 log.InfoContext(ctx, "scoped log")
 ```
 
-
-## Forensic Mode (Incident Tracing)
-
-Gunakan mode ini saat investigasi anomali (bukan default sehari-hari):
-
 ```go
 // incoming HTTP
 inOpts := nethttp.ForensicOptions()
@@ -417,68 +474,6 @@ outOpts.SuccessSampleEvery = 5
 dbOpts := gormx.TracingOptions()
 dbOpts.SuccessSampleEvery = 10
 ```
-
-Karakteristik mode forensic:
-
-- capture header/query/body aktif (tetap bounded + redaction)
-- agent/source/target field lebih lengkap
-- query SQL tampil pada slow/error (dan bisa juga pada success)
-- error context bisa diperkaya via `ErrorDetailFunc`
-
-## Field Guide (Wajib vs Opsional)
-
-Umumnya selalu ada (shared core fields):
-
-- `time`
-- `level`
-- `msg`
-- `service_name`
-- `environment`
-
-Sering ada (jika konteks tersedia):
-
-- `correlation_id`
-- `request_id`
-- `trace_id`
-- `span_id`
-- `layer`
-- `component`
-- `operation`
-
-Khusus event HTTP:
-
-- `event`
-- `http.method`
-- `http.path`
-- `http.status_code`
-- `duration_ms`
-- `slow`
-- `threshold_ms`
-- `agent.name`, `agent.type`, `agent.device`
-- `source.ip`, `source.port`, `source.addr`
-- `target.host`, `target.port`
-
-Khusus event GORM:
-
-- `event` (`db.query.complete|db.query.slow|db.query.error`)
-- `db.query_type`
-- `db.rows_affected`
-- `db.result_status`
-- `duration_ms`
-- `db.statement` (default pada slow/error)
-- `db.statement_truncated`
-- `error.kind`, `error.message` (saat error)
-- `error.expected`, `error.actual` (jika bisa diinfer)
-- `error.details` (jika pakai `ErrorDetailFunc`)
-
-Khusus event job:
-
-- `event` (`job.started|job.completed|job.failed|job.retry`)
-- `job.run_id`
-- `job.name`
-- `duration_ms`
-- `slow`
-- `threshold_ms`
 
 ## Linting
 
@@ -516,9 +511,7 @@ golangci-lint run ./...
 ```
 
 
-## Contoh Output JSON
-
-Berikut contoh output JSON lintas modul (disederhanakan).
+## Example
 
 Logger basic:
 
@@ -549,7 +542,7 @@ Logger + custom fields:
 }
 ```
 
-Incoming HTTP complete (net/http / Gin / Fiber schema sama):
+Incoming HTTP complete (net/http / Gin / Fiber):
 
 ```json
 {
@@ -790,7 +783,7 @@ Job failed:
 }
 ```
 
-Contoh redaction (header/body sensitif disamarkan):
+redaction:
 
 ```json
 {

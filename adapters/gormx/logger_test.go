@@ -64,6 +64,9 @@ func TestSlowQueryDetection(t *testing.T) {
 	if last[FieldDBQueryType] != "SELECT" {
 		t.Fatalf("expected query type SELECT, got=%v", last[FieldDBQueryType])
 	}
+	if last[FieldDBTable] != "users" {
+		t.Fatalf("expected db.table users, got=%v", last[FieldDBTable])
+	}
 	if slow, ok := last["slow"].(bool); !ok || !slow {
 		t.Fatalf("expected slow=true, got=%v", last["slow"])
 	}
@@ -87,7 +90,7 @@ func TestErrorLogging(t *testing.T) {
 
 	gl.Trace(
 		context.Background(), time.Now(), func() (string, int64) {
-			return "SELECT 1", -1
+			return "SELECT * FROM invoices WHERE id=1", -1
 		}, errors.New("db down"),
 	)
 
@@ -96,11 +99,14 @@ func TestErrorLogging(t *testing.T) {
 	if last[FieldEvent] != "db.query.error" {
 		t.Fatalf("expected db.query.error")
 	}
-	if last[FieldDBStatement] != "SELECT 1" {
+	if last[FieldDBStatement] != "SELECT * FROM invoices WHERE id=1" {
 		t.Fatalf("expected query in error log, got=%v", last[FieldDBStatement])
 	}
 	if last[FieldDBQueryType] != "SELECT" {
 		t.Fatalf("expected query type SELECT")
+	}
+	if last[FieldDBTable] != "invoices" {
+		t.Fatalf("expected db.table invoices, got=%v", last[FieldDBTable])
 	}
 }
 
@@ -296,8 +302,20 @@ func TestSuccessLogsQueryWithLogSQLOnSuccess(t *testing.T) {
 
 func TestTracingOptionsPreset(t *testing.T) {
 	opts := TracingOptions()
-	if !opts.LogSuccess || !opts.LogSQLOnSuccess || !opts.LogSQLOnError || !opts.LogSQLOnSlow {
-		t.Fatalf("tracing preset should enable verbose query tracing")
+	if opts.Level != gormlogger.Info {
+		t.Fatalf("expected Level=Info, got %v", opts.Level)
+	}
+	if !opts.LogSuccess {
+		t.Fatalf("tracing preset should enable success logs")
+	}
+	if opts.LogSQL {
+		t.Fatalf("tracing preset should keep base LogSQL=false")
+	}
+	if !opts.LogSQLOnSuccess || !opts.LogSQLOnError || !opts.LogSQLOnSlow {
+		t.Fatalf("tracing preset should enable SQL capture on success/error/slow")
+	}
+	if !opts.IncludeExpectationHints {
+		t.Fatalf("tracing preset should include expectation hints")
 	}
 	if opts.ErrorDetailFunc == nil {
 		t.Fatalf("tracing preset should include default error detail func")
