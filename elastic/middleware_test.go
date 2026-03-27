@@ -50,6 +50,31 @@ func TestDisabledMiddleware_StdoutStillWorks(t *testing.T) {
 	}
 }
 
+func TestEnabledWithoutEndpoint_NoPanicAndNoCrash(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.Endpoint = ""
+	cfg.Index = "xeanees-logs"
+	cfg.ConnectionLogOutput = &bytes.Buffer{}
+
+	m := NewMiddleware(cfg)
+	if m == nil {
+		t.Fatalf("middleware should not be nil")
+	}
+
+	var out bytes.Buffer
+	log := logger.New(logger.Config{
+		ServiceName: "svc",
+		Environment: "production",
+		Output:      &out,
+		Middlewares: []logger.HandlerMiddleware{m.LoggerMiddleware()},
+	})
+	log.Info("safe even without endpoint")
+	if out.Len() == 0 {
+		t.Fatalf("stdout log should still work")
+	}
+}
+
 func TestDirectElasticFieldsMapping(t *testing.T) {
 	var hitAuth string
 	var hitBody string
@@ -79,6 +104,7 @@ func TestDirectElasticFieldsMapping(t *testing.T) {
 	cfg.MaxRetries = 0
 	cfg.IndexTimestampSuffix = true
 	cfg.IndexTimestampLayout = "20060102"
+	cfg.BootstrapOnStart = false
 
 	m := NewMiddleware(cfg)
 	defer func() { _ = m.Close(context.Background()) }()
@@ -138,6 +164,7 @@ func TestRetryAndSendSuccess(t *testing.T) {
 	cfg.MaxRetries = 3
 	cfg.RetryBackoff = 10 * time.Millisecond
 	cfg.MaxBackoff = 50 * time.Millisecond
+	cfg.BootstrapOnStart = false
 
 	m := NewMiddleware(cfg)
 	defer func() { _ = m.Close(context.Background()) }()
@@ -171,6 +198,7 @@ func TestQueueFullDropsNotBlocking(t *testing.T) {
 	cfg.Timeout = 10 * time.Millisecond
 	cfg.MaxRetries = 0
 	cfg.FlushInterval = 1 * time.Second
+	cfg.BootstrapOnStart = false
 
 	m := NewMiddleware(cfg)
 	defer func() { _ = m.Close(context.Background()) }()
@@ -245,6 +273,7 @@ func TestMonitorConnectionStatus(t *testing.T) {
 	cfg.FlushInterval = 10 * time.Millisecond
 	cfg.EnableMonitor = true
 	cfg.MonitorInterval = 20 * time.Millisecond
+	cfg.BootstrapOnStart = false
 	cfg.OnMonitor = func(st ConnectionStatus) {
 		onMonitorCalls.Add(1)
 	}
