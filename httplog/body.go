@@ -6,7 +6,7 @@ import (
 	"github.com/budistwn15/go-obskit/redact"
 )
 
-var defaultRedactRules = redact.DefaultRules()
+var defaultRedactRules = redact.DefaultPIIRules()
 
 type BodyCapture struct {
 	Value     string
@@ -22,11 +22,11 @@ func CaptureBody(contentType string, body []byte, maxBytes int, jsonDenylist []s
 	if !IsSafeBodyContentType(contentType) {
 		return BodyCapture{Skipped: true, Reason: "content_type_not_captured"}
 	}
-	
+
 	if maxBytes <= 0 {
 		maxBytes = 4 * 1024
 	}
-	
+
 	if isJSONContentType(contentType) {
 		rules := defaultRedactRules
 		if len(jsonDenylist) > 0 {
@@ -38,7 +38,7 @@ func CaptureBody(contentType string, body []byte, maxBytes int, jsonDenylist []s
 			Truncated: truncated,
 		}
 	}
-	
+
 	out, truncated := redact.TruncateBytes(body, maxBytes)
 	return BodyCapture{
 		Value:     string(out),
