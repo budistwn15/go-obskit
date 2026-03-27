@@ -12,6 +12,12 @@ func DefaultOptions() Options {
 	}
 }
 
+// ForensicOptions returns the high-detail parity preset for the Gin adapter.
+//
+// Stability contract:
+// - This preset is treated as a stable cross-version profile.
+// - No default value inside this preset should change silently in minor/patch releases.
+// - If a value must change, it should be announced as a breaking preset change.
 func ForensicOptions() Options {
 	return Options{
 		Options: httplog.ForensicOptions(),

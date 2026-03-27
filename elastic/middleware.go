@@ -63,6 +63,23 @@ func NewMiddleware(cfg Config) *Middleware {
 		slog.Int("elastic.queue_size", cfg.QueueSize),
 		slog.Int("elastic.batch_size", cfg.BatchSize),
 	)
+	if cfg.Bootstrap && cfg.BootstrapOnStart {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+			defer cancel()
+			if err := m.Bootstrap(ctx); err != nil {
+				m.emitStatus(slog.LevelWarn, "elastic bootstrap failed", slog.String("error.message", err.Error()))
+				m.handleErr(err)
+				return
+			}
+			m.emitStatus(
+				slog.LevelInfo, "elastic bootstrap completed",
+				slog.String("elastic.pipeline", cfg.PipelineName),
+				slog.String("elastic.template", cfg.TemplateName),
+				slog.String("elastic.index_pattern", cfg.IndexPattern),
+			)
+		}()
+	}
 	m.wg.Add(1)
 	go m.run()
 	if cfg.EnableMonitor {
