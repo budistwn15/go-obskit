@@ -13,13 +13,16 @@ func main() {
 	file := flag.String("file", ".env.example", "target .env.example path")
 	create := flag.Bool("create", false, "create file if missing")
 	header := flag.Bool("header", true, "add comment header when appending")
-	profile := flag.String("profile", "minimal", "env profile: minimal|full")
+	profile := flag.String("profile", "minimal", "env profile: minimal|loki|full")
 	quiet := flag.Bool("quiet", false, "quiet mode")
 	flag.Parse()
 
 	p := configenv.ProfileMinimal
-	if strings.EqualFold(strings.TrimSpace(*profile), "full") {
+	switch strings.ToLower(strings.TrimSpace(*profile)) {
+	case "full":
 		p = configenv.ProfileFull
+	case "loki":
+		p = configenv.ProfileLoki
 	}
 
 	res, err := configenv.UpsertEnvExample(
