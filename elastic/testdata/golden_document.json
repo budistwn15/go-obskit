@@ -1,0 +1,23 @@
+{
+  "@timestamp": "2026-03-27T10:00:00Z",
+  "custom.payload": "{\"tenant_id\":\"t-1\"}",
+  "custom.payload.tenant_id": "t-1",
+  "custom.payload_json": {
+    "tenant_id": "t-1"
+  },
+  "db.statement": "SELECT * FROM users WHERE id=1",
+  "db.table": "users",
+  "environment": "test",
+  "http.request.body": "{\"status\":\"ok\",\"data\":{\"email\":\"a@b.c\"}}",
+  "http.request.body.data.email": "a@b.c",
+  "http.request.body.status": "ok",
+  "http.request.body_json": {
+    "data": {
+      "email": "a@b.c"
+    },
+    "status": "ok"
+  },
+  "http.status_code": 200,
+  "level": "INFO",
+  "message": "golden event"
+}
