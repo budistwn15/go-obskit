@@ -81,6 +81,27 @@ func TestBootstrap_CreatesPipelineTemplateAndAppliesSettings(t *testing.T) {
 	if !strings.Contains(settingsBody, "obskit-p1") {
 		t.Fatalf("existing index settings should apply pipeline")
 	}
+	var tpl map[string]any
+	if err := json.Unmarshal([]byte(templateBody), &tpl); err != nil {
+		t.Fatalf("template body should be valid json: %v", err)
+	}
+	tplSection, ok := tpl["template"].(map[string]any)
+	if !ok {
+		t.Fatalf("template section missing")
+	}
+	mappings, ok := tplSection["mappings"].(map[string]any)
+	if !ok {
+		t.Fatalf("mappings section missing")
+	}
+	props, ok := mappings["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("template properties missing")
+	}
+	for _, key := range []string{"duration_ms", "http.status_code", "status_code", "slow", "source.port", "schema.version", "db.fingerprint"} {
+		if _, exists := props[key]; !exists {
+			t.Fatalf("expected mapping for %s", key)
+		}
+	}
 
 	_ = paths
 }

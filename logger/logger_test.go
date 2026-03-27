@@ -40,6 +40,28 @@ func TestNew_DefaultJSONForProd(t *testing.T) {
 	if m[FieldServiceName] != "api" {
 		t.Fatalf("expected service_name=api got=%v", m[FieldServiceName])
 	}
+	if m[FieldSchemaVersion] != DefaultSchemaVersion {
+		t.Fatalf("expected schema.version=%s got=%v", DefaultSchemaVersion, m[FieldSchemaVersion])
+	}
+}
+
+func TestNew_CustomSchemaVersion(t *testing.T) {
+	var buf bytes.Buffer
+	l := New(Config{
+		ServiceName:   "api",
+		Environment:   "production",
+		SchemaVersion: "2",
+		Output:        &buf,
+	})
+	l.Info("hello")
+	line := strings.TrimSpace(buf.String())
+	var m map[string]any
+	if err := json.Unmarshal([]byte(line), &m); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if m[FieldSchemaVersion] != "2" {
+		t.Fatalf("expected custom schema.version, got=%v", m[FieldSchemaVersion])
+	}
 }
 
 func TestLevelParsing(t *testing.T) {

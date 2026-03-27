@@ -35,6 +35,7 @@ func New(cfg Config) *slog.Logger {
 		slog.String(FieldServiceName, cfg.ServiceName),
 		slog.String(FieldServiceVersion, cfg.ServiceVersion),
 		slog.String(FieldEnvironment, cfg.Environment),
+		slog.String(FieldSchemaVersion, cfg.SchemaVersion),
 		slog.String(FieldHost, host),
 		slog.String(FieldInstanceID, instanceID),
 	)

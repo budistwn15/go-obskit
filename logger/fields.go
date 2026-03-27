@@ -4,6 +4,7 @@ const (
 	FieldServiceName    = "service_name"
 	FieldServiceVersion = "service_version"
 	FieldEnvironment    = "environment"
+	FieldSchemaVersion  = "schema.version"
 	FieldHost           = "host"
 	FieldInstanceID     = "instance_id"
 	FieldCorrelationID  = "correlation_id"
@@ -15,6 +16,8 @@ const (
 	FieldOperation      = "operation"
 	FieldDurationMS     = "duration_ms"
 )
+
+const DefaultSchemaVersion = "1"
 
 type ContextMeta struct {
 	CorrelationID string
