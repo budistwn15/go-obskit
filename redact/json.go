@@ -38,9 +38,25 @@ func redactAny(value any, rules Rules) any {
 			out[i] = redactAny(v[i], rules)
 		}
 		return out
+	case string:
+		return redactStringValue(v, rules)
 	default:
 		return value
 	}
+}
+
+func redactStringValue(v string, rules Rules) string {
+	if !rules.EnabledPatternRedaction || len(rules.ValuePatterns) == 0 || v == "" {
+		return v
+	}
+	redacted := v
+	for _, p := range rules.ValuePatterns {
+		if p.Expr == nil {
+			continue
+		}
+		redacted = p.Expr.ReplaceAllString(redacted, RedactedValue)
+	}
+	return redacted
 }
 
 func safeFallback(maxBytes int) []byte {

@@ -11,6 +11,10 @@ import (
 type Options struct {
 	Level gormlogger.LogLevel
 
+	// DBSystem should reflect actual database target, e.g. "postgresql", "mysql", "sqlserver".
+	// Default: "sql".
+	DBSystem string
+
 	SlowThreshold time.Duration
 
 	LogSuccess      bool
@@ -22,6 +26,12 @@ type Options struct {
 
 	LogRowsAffected bool
 	LogSQLArgs      bool
+	// IncludeWhereDetails extracts WHERE columns/values/conditions from SQL statement.
+	IncludeWhereDetails bool
+	// MaxWhereConditions bounds extraction work for hot path safety.
+	MaxWhereConditions int
+	// RedactWhereSensitiveValues masks sensitive WHERE values (email/password/token/etc).
+	RedactWhereSensitiveValues bool
 
 	SuccessSampleEvery      uint64
 	ShouldLog               sampling.Hook
@@ -34,20 +44,24 @@ type Options struct {
 
 func DefaultOptions() Options {
 	return Options{
-		Level:                   gormlogger.Warn,
-		SlowThreshold:           250 * time.Millisecond,
-		LogSuccess:              false,
-		LogSQL:                  false,
-		MaxSQLLen:               2048,
-		LogSQLOnError:           true,
-		LogSQLOnSlow:            true,
-		LogSQLOnSuccess:         false,
-		LogRowsAffected:         true,
-		LogSQLArgs:              false,
-		SuccessSampleEvery:      1,
-		IncludeExpectationHints: true,
-		IgnoreRecordNotFound:    true,
-		RecoverInternally:       true,
+		Level:                      gormlogger.Warn,
+		DBSystem:                   "sql",
+		SlowThreshold:              250 * time.Millisecond,
+		LogSuccess:                 false,
+		LogSQL:                     false,
+		MaxSQLLen:                  2048,
+		LogSQLOnError:              true,
+		LogSQLOnSlow:               true,
+		LogSQLOnSuccess:            false,
+		LogRowsAffected:            true,
+		LogSQLArgs:                 false,
+		IncludeWhereDetails:        true,
+		MaxWhereConditions:         16,
+		RedactWhereSensitiveValues: true,
+		SuccessSampleEvery:         1,
+		IncludeExpectationHints:    true,
+		IgnoreRecordNotFound:       true,
+		RecoverInternally:          true,
 	}
 }
 
@@ -64,6 +78,12 @@ func normalizeOptions(opts Options) Options {
 	}
 	if opts.SuccessSampleEvery == 0 {
 		opts.SuccessSampleEvery = def.SuccessSampleEvery
+	}
+	if opts.DBSystem == "" {
+		opts.DBSystem = def.DBSystem
+	}
+	if opts.MaxWhereConditions <= 0 {
+		opts.MaxWhereConditions = def.MaxWhereConditions
 	}
 	return opts
 }

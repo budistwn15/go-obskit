@@ -18,6 +18,7 @@ type Config struct {
 	ServiceName    string
 	ServiceVersion string
 	Environment    string
+	SchemaVersion  string
 	Level          Level
 	Format         Format
 	Output         io.Writer
@@ -40,6 +41,9 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if cfg.Format == "" {
 		cfg.Format = defaultFormat(cfg.Environment)
+	}
+	if strings.TrimSpace(cfg.SchemaVersion) == "" {
+		cfg.SchemaVersion = DefaultSchemaVersion
 	}
 	return cfg
 }
