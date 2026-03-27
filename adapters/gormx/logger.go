@@ -84,6 +84,7 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 		statementTruncated = true
 	}
 	queryType := inferQueryType(statement)
+	table := inferTable(statement)
 
 	attrs := []slog.Attr{
 		slog.String(FieldDBSystem, "gorm"),
@@ -92,6 +93,9 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 		slog.String(FieldComponent, "gorm"),
 		slog.String(FieldOperation, "db.query"),
 		slog.String(FieldDBQueryType, queryType),
+	}
+	if table != "" {
+		attrs = append(attrs, slog.String(FieldDBTable, table))
 	}
 	if corrID := correlation.ID(ctx); corrID != "" {
 		attrs = append(attrs, slog.String(FieldCorrelation, corrID))
@@ -208,6 +212,45 @@ func inferQueryType(statement string) string {
 		return "unknown"
 	}
 	return strings.ToUpper(parts[0])
+}
+
+func inferTable(statement string) string {
+	s := strings.TrimSpace(statement)
+	if s == "" {
+		return ""
+	}
+	parts := strings.Fields(s)
+	if len(parts) < 2 {
+		return ""
+	}
+	verb := strings.ToUpper(parts[0])
+	switch verb {
+	case "SELECT", "DELETE":
+		return tokenAfter(parts, "FROM")
+	case "UPDATE":
+		return cleanTable(parts[1])
+	case "INSERT":
+		return tokenAfter(parts, "INTO")
+	}
+	return ""
+}
+
+func tokenAfter(parts []string, kw string) string {
+	for i := 0; i < len(parts)-1; i++ {
+		if strings.EqualFold(parts[i], kw) {
+			return cleanTable(parts[i+1])
+		}
+	}
+	return ""
+}
+
+func cleanTable(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, "`\"")
+	s = strings.TrimSuffix(s, ";")
+	s = strings.TrimSuffix(s, ",")
+	s = strings.TrimPrefix(s, "(")
+	return s
 }
 
 func inferExpectation(err error, rows int64) (expected string, actual string, ok bool) {

@@ -5,6 +5,11 @@ import gormlogger "gorm.io/gorm/logger"
 
 // TracingOptions returns an opt-in verbose profile for deep query tracing.
 // Use this only on targeted services/environments due higher log volume.
+//
+// Stability contract:
+// - This preset is treated as a stable cross-version profile.
+// - No default value inside this preset should change silently in minor/patch releases.
+// - If a value must change, it should be announced as a breaking preset change.
 func TracingOptions() Options {
 	opts := DefaultOptions()
 	opts.Level = gormlogger.Info

@@ -5,6 +5,7 @@ const (
 	FieldDBSystem             = "db.system"
 	FieldDBStatement          = "db.statement"
 	FieldDBQueryType          = "db.query_type"
+	FieldDBTable              = "db.table"
 	FieldDBStatementTruncated = "db.statement_truncated"
 	FieldDBRows               = "db.rows_affected"
 	FieldDBResultStatus       = "db.result_status"
