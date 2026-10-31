@@ -171,3 +171,42 @@ func TestConfigOwnership(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 }
+
+func TestPermanentClientErrorIsNotRetried(t *testing.T) {
+	var calls atomic.Int64
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer ts.Close()
+
+	mw := NewMiddleware(Config{
+		Enabled:               true,
+		Endpoint:              ts.URL,
+		BatchSize:             1,
+		MaxRetries:            3,
+		RetryBackoff:          time.Millisecond,
+		ConnectionLogToStdout: false,
+	})
+	mw.enqueue(slog.NewRecord(time.Now(), slog.LevelInfo, "bad", 0))
+	if err := mw.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("permanent 4xx calls = %d, want 1", got)
+	}
+	if got := mw.Stats().Retried; got != 0 {
+		t.Fatalf("permanent 4xx retries = %d, want 0", got)
+	}
+}
+
+func TestEnqueueAllocationBudget(t *testing.T) {
+	mw := benchmarkMiddleware(1)
+	record := slog.NewRecord(time.Unix(0, 0), slog.LevelInfo, "budget", 0)
+	if got := testing.AllocsPerRun(1000, func() {
+		mw.enqueue(record)
+		<-mw.queue
+	}); got != 0 {
+		t.Fatalf("enqueue allocations = %.2f, want 0", got)
+	}
+}

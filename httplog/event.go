@@ -10,7 +10,7 @@ type Event struct {
 
 func BuildRequestStart(req RequestMeta, ev EventMeta) Event {
 	attrs := joinAttrs(
-		slog.String("event", "http.request.start"),
+		slog.String("event.action", "http.request.start"),
 		RequestAttrs(NormalizeRequestMeta(req)),
 		nil,
 		EventAttrs(ev),
@@ -24,7 +24,7 @@ func BuildRequestStart(req RequestMeta, ev EventMeta) Event {
 
 func BuildRequestComplete(req RequestMeta, res ResponseMeta, ev EventMeta) Event {
 	attrs := joinAttrs(
-		slog.String("event", "http.request.complete"),
+		slog.String("event.action", "http.request.complete"),
 		RequestAttrs(NormalizeRequestMeta(req)),
 		ResponseAttrs(NormalizeResponseMeta(res)),
 		EventAttrs(ev),
@@ -38,7 +38,7 @@ func BuildRequestComplete(req RequestMeta, res ResponseMeta, ev EventMeta) Event
 
 func BuildRequestError(req RequestMeta, res ResponseMeta, ev EventMeta) Event {
 	attrs := joinAttrs(
-		slog.String("event", "http.request.error"),
+		slog.String("event.action", "http.request.error"),
 		RequestAttrs(NormalizeRequestMeta(req)),
 		ResponseAttrs(NormalizeResponseMeta(res)),
 		EventAttrs(ev),

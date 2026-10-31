@@ -58,9 +58,8 @@ func Middleware(log *slog.Logger, opts Options) fiber.Handler {
 			}
 		}
 
-		if opts.LogRequestStart && shouldLog(
-			sampler, opts.ShouldLogStart, "start", reqMeta, httplog.ResponseMeta{}, httplog.EventMeta{}, nil,
-			opts.RecoverInternally,
+		if opts.LogRequestStart && httplog.ShouldLog(sampler, opts.ShouldLogStart,
+			httplog.DecisionMeta{Event: "start", Request: reqMeta}, opts.RecoverInternally,
 		) {
 			ev := httplog.BuildRequestStart(
 				reqMeta, httplog.EventMeta{
@@ -70,7 +69,7 @@ func Middleware(log *slog.Logger, opts Options) fiber.Handler {
 					SpanID:        spanID,
 				},
 			)
-			logEvent(log, ctx, ev, opts.RecoverInternally)
+			httplog.LogEvent(log, ctx, ev, opts.RecoverInternally)
 		}
 
 		err := c.Next()
@@ -107,55 +106,24 @@ func Middleware(log *slog.Logger, opts Options) fiber.Handler {
 			if err != nil {
 				evMeta.ErrorMessage = err.Error()
 			}
-			if opts.LogRequestError && shouldLog(
-				sampler, opts.ShouldLogError, "error", reqMeta, resMeta, evMeta, err, opts.RecoverInternally,
+			if opts.LogRequestError && httplog.ShouldLog(sampler, opts.ShouldLogError,
+				httplog.DecisionMeta{Event: "error", Request: reqMeta, Response: resMeta, EventMeta: evMeta, Err: err},
+				opts.RecoverInternally,
 			) {
-				logEvent(log, ctx, httplog.BuildRequestError(reqMeta, resMeta, evMeta), opts.RecoverInternally)
+				httplog.LogEvent(log, ctx, httplog.BuildRequestError(reqMeta, resMeta, evMeta), opts.RecoverInternally)
 			}
 			return err
 		}
 		if !opts.LogSuccessHeaders {
 			resMeta.Headers = nil
 		}
-		if opts.LogRequestComplete && (opts.ShouldLogComplete == nil || shouldLog(
-			sampler, opts.ShouldLogComplete, "complete", reqMeta, resMeta, evMeta, nil, opts.RecoverInternally,
+		if opts.LogRequestComplete && (opts.ShouldLogComplete == nil || httplog.ShouldLog(
+			sampler, opts.ShouldLogComplete,
+			httplog.DecisionMeta{Event: "complete", Request: reqMeta, Response: resMeta, EventMeta: evMeta},
+			opts.RecoverInternally,
 		)) {
-			logEvent(log, ctx, httplog.BuildRequestComplete(reqMeta, resMeta, evMeta), opts.RecoverInternally)
+			httplog.LogEvent(log, ctx, httplog.BuildRequestComplete(reqMeta, resMeta, evMeta), opts.RecoverInternally)
 		}
 		return err
 	}
-}
-
-func shouldLog(
-	sampler *httplog.SuccessSampler, hook httplog.DecisionHook, event string, req httplog.RequestMeta,
-	res httplog.ResponseMeta, ev httplog.EventMeta, err error, recoverInternally bool,
-) bool {
-	meta := httplog.DecisionMeta{
-		Event:     event,
-		Request:   req,
-		Response:  res,
-		EventMeta: ev,
-		Err:       err,
-	}
-	if !sampler.ShouldLog(meta) {
-		return false
-	}
-	if hook == nil {
-		return true
-	}
-	result, _ := httplog.SafeValue(
-		recoverInternally, true, func() bool {
-			return hook(meta)
-		},
-	)
-	return result
-}
-
-func logEvent(log *slog.Logger, ctx context.Context, event httplog.Event, recoverInternally bool) {
-	_, _ = httplog.SafeValue(
-		recoverInternally, 0, func() int {
-			log.LogAttrs(ctx, event.Level, event.Message, event.Attrs...)
-			return 0
-		},
-	)
 }

@@ -6,6 +6,7 @@ $modules = @(
     "adapters/ginx",
     "adapters/fiberx",
     "adapters/gormx",
+    "adapters/otel",
     "examples"
 )
 

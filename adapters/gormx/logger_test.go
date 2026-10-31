@@ -121,9 +121,6 @@ func TestErrorLogging(t *testing.T) {
 	if last[FieldDBTable] != "invoices" {
 		t.Fatalf("expected db.table invoices, got=%v", last[FieldDBTable])
 	}
-	if _, ok := last[FieldDBFingerprint].(string); !ok {
-		t.Fatalf("expected db.fingerprint in error log")
-	}
 	if last[FieldDBSystem] != "sql" {
 		t.Fatalf("expected default db.system=sql, got=%v", last[FieldDBSystem])
 	}
@@ -151,42 +148,6 @@ func TestDBSystemConfiguredFromOptionsAndContext(t *testing.T) {
 	last := logs[len(logs)-1]
 	if last[FieldDBSystem] != "mysql" {
 		t.Fatalf("expected ctx db.system override=mysql, got=%v", last[FieldDBSystem])
-	}
-}
-
-func TestWhereExtraction(t *testing.T) {
-	var buf bytes.Buffer
-	slog := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
-	gl := New(
-		slog, Options{
-			Level:                      gormlogger.Error,
-			LogSQL:                     true,
-			IncludeWhereDetails:        true,
-			RedactWhereSensitiveValues: true,
-		},
-	).(gormlogger.Interface)
-
-	gl.Trace(
-		context.Background(), time.Now(), func() (string, int64) {
-			return "SELECT * FROM users WHERE id = 42 AND email = 'john@example.com' AND status = 'active'", -1
-		}, errors.New("db down"),
-	)
-
-	logs := parseLines(t, buf.String())
-	last := logs[len(logs)-1]
-	cols, ok := last[FieldDBWhereColumns].([]any)
-	if !ok || len(cols) == 0 {
-		t.Fatalf("expected db.where.columns")
-	}
-	values, ok := last[FieldDBWhereValues].(map[string]any)
-	if !ok {
-		t.Fatalf("expected db.where.values")
-	}
-	if values["id"] != "42" {
-		t.Fatalf("expected id value 42, got=%v", values["id"])
-	}
-	if values["email"] != "***redacted***" {
-		t.Fatalf("expected email redacted, got=%v", values["email"])
 	}
 }
 
@@ -247,29 +208,6 @@ func TestLowNoiseDefaults(t *testing.T) {
 	)
 	if strings.TrimSpace(buf.String()) != "" {
 		t.Fatalf("default should not log successful fast query")
-	}
-}
-
-func TestDefaultOptions_DoNotExtractWhereValues(t *testing.T) {
-	if DefaultOptions().IncludeWhereDetails {
-		t.Fatal("default options must not extract SQL WHERE values")
-	}
-}
-
-func TestDefaultOptions_DoNotEmitWhereDetails(t *testing.T) {
-	var buf bytes.Buffer
-	log := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
-	gl := New(log, DefaultOptions()).(gormlogger.Interface)
-
-	gl.Trace(context.Background(), time.Now(), func() (string, int64) {
-		return "SELECT * FROM users WHERE email='john@example.com' AND name='John' AND address='Secret' AND token='abc'", 0
-	}, errors.New("db down"))
-
-	last := parseLines(t, buf.String())[0]
-	for _, field := range []string{FieldDBWhereColumns, FieldDBWhereValues, FieldDBWhereConditions} {
-		if _, ok := last[field]; ok {
-			t.Fatalf("default log contains %s", field)
-		}
 	}
 }
 
@@ -422,41 +360,6 @@ func TestTracingOptionsPreset(t *testing.T) {
 	}
 	if opts.ErrorDetailFunc == nil {
 		t.Fatalf("tracing preset should include default error detail func")
-	}
-}
-
-func TestFingerprintStableAcrossDifferentLiteralValues(t *testing.T) {
-	var buf bytes.Buffer
-	slog := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
-	gl := New(
-		slog, Options{
-			Level:      gormlogger.Error,
-			LogSuccess: false,
-		},
-	).(gormlogger.Interface)
-
-	gl.Trace(
-		context.Background(), time.Now(), func() (string, int64) {
-			return "SELECT * FROM users WHERE id=1 AND status='active'", 1
-		}, errors.New("x1"),
-	)
-	gl.Trace(
-		context.Background(), time.Now(), func() (string, int64) {
-			return "SELECT * FROM users WHERE id=999 AND status='inactive'", 1
-		}, errors.New("x2"),
-	)
-
-	logs := parseLines(t, buf.String())
-	if len(logs) < 2 {
-		t.Fatalf("expected two logs")
-	}
-	fp1, _ := logs[len(logs)-2][FieldDBFingerprint].(string)
-	fp2, _ := logs[len(logs)-1][FieldDBFingerprint].(string)
-	if fp1 == "" || fp2 == "" {
-		t.Fatalf("expected db.fingerprint on both logs")
-	}
-	if fp1 != fp2 {
-		t.Fatalf("expected same fingerprint for same query shape, got %s vs %s", fp1, fp2)
 	}
 }
 

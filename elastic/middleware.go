@@ -33,16 +33,11 @@ type Middleware struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	closeCtx     context.Context
-	workers      atomic.Int32
-
-	monitorMu sync.RWMutex
-	monitor   ConnectionStatus
-
-	enqueued atomic.Uint64
-	dropped  atomic.Uint64
-	sent     atomic.Uint64
-	failed   atomic.Uint64
-	retried  atomic.Uint64
+	enqueued     atomic.Uint64
+	dropped      atomic.Uint64
+	sent         atomic.Uint64
+	failed       atomic.Uint64
+	retried      atomic.Uint64
 }
 
 func NewMiddleware(cfg Config) *Middleware {
@@ -65,14 +60,6 @@ func NewMiddleware(cfg Config) *Middleware {
 	m.enqueuesDone = make(chan struct{})
 	m.done = make(chan struct{})
 	m.ctx, m.cancel = context.WithCancel(context.Background())
-	workerCount := int32(1)
-	if cfg.Bootstrap && cfg.BootstrapOnStart {
-		workerCount++
-	}
-	if cfg.EnableMonitor {
-		workerCount++
-	}
-	m.workers.Store(workerCount)
 	m.emitStatus(
 		slog.LevelInfo, "elastic sink enabled",
 		slog.String("elastic.endpoint", cfg.Endpoint),
@@ -80,28 +67,7 @@ func NewMiddleware(cfg Config) *Middleware {
 		slog.Int("elastic.queue_size", cfg.QueueSize),
 		slog.Int("elastic.batch_size", cfg.BatchSize),
 	)
-	if cfg.Bootstrap && cfg.BootstrapOnStart {
-		go func() {
-			defer m.workerDone()
-			ctx, cancel := context.WithTimeout(m.ctx, cfg.Timeout)
-			defer cancel()
-			if err := m.Bootstrap(ctx); err != nil {
-				m.emitStatus(slog.LevelWarn, "elastic bootstrap failed", slog.String("error.message", err.Error()))
-				m.handleErr(err)
-				return
-			}
-			m.emitStatus(
-				slog.LevelInfo, "elastic bootstrap completed",
-				slog.String("elastic.pipeline", cfg.PipelineName),
-				slog.String("elastic.template", cfg.TemplateName),
-				slog.String("elastic.index_pattern", cfg.IndexPattern),
-			)
-		}()
-	}
 	go m.run()
-	if cfg.EnableMonitor {
-		go m.runMonitor()
-	}
 	return m
 }
 
@@ -138,12 +104,6 @@ func (m *Middleware) Close(ctx context.Context) error {
 	case <-m.done:
 		m.emitStatus(slog.LevelInfo, "elastic sink closed")
 		return nil
-	}
-}
-
-func (m *Middleware) workerDone() {
-	if m.workers.Add(-1) == 0 {
-		close(m.done)
 	}
 }
 

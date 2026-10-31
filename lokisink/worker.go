@@ -90,7 +90,7 @@ func (m *Middleware) ship(ctx context.Context, batch []slog.Record) error {
 			return nil
 		}
 		allErr = joinErr(allErr, err)
-		if attempt == m.cfg.MaxRetries {
+		if attempt == m.cfg.MaxRetries || !isRetryable(err) {
 			break
 		}
 		m.retryErr(attempt+1, err)
@@ -158,9 +158,16 @@ func (m *Middleware) send(ctx context.Context, payload []byte) error {
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("loki rejected status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return permanentError{fmt.Errorf("loki rejected status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))}
 	}
 	return nil
+}
+
+type permanentError struct{ error }
+
+func isRetryable(err error) bool {
+	var permanent permanentError
+	return !errors.As(err, &permanent)
 }
 
 func waitRetry(ctx context.Context, delay time.Duration) error {

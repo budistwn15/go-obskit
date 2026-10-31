@@ -205,7 +205,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func outboundAttrs(event string, request, response, eventMeta []slog.Attr) []slog.Attr {
 	attrs := make([]slog.Attr, 1, 1+len(request)+len(response)+len(eventMeta))
-	attrs[0] = slog.String("event", event)
+	attrs[0] = slog.String("event.action", event)
 	attrs = append(attrs, request...)
 	attrs = append(attrs, response...)
 	return append(attrs, eventMeta...)

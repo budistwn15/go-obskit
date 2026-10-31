@@ -86,8 +86,8 @@ func TestErrorClassification(t *testing.T) {
 	_, _ = tr.RoundTrip(req)
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
-	if last["error.kind"] != "context_deadline_exceeded" {
-		t.Fatalf("unexpected error kind: %v", last["error.kind"])
+	if last["error.type"] != "context_deadline_exceeded" {
+		t.Fatalf("unexpected error kind: %v", last["error.type"])
 	}
 }
 
@@ -442,7 +442,7 @@ func TestSuccessSamplingKeepsErrorsAndSlow(t *testing.T) {
 	req2, _ := http.NewRequest(http.MethodGet, "http://example.com/error", nil)
 	_, _ = trErr.RoundTrip(req2)
 	logs := parseLogs(t, buf.String())
-	if len(logs) == 0 || logs[len(logs)-1]["event"] != "http.outbound.error" {
+	if len(logs) == 0 || logs[len(logs)-1]["event.action"] != "http.outbound.error" {
 		t.Fatalf("error logs must not be sampled out")
 	}
 

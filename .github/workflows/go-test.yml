@@ -17,6 +17,7 @@ jobs:
           - adapters/ginx
           - adapters/fiberx
           - adapters/gormx
+          - adapters/otel
           - examples
     defaults:
       run:
@@ -32,3 +33,54 @@ jobs:
 
       - name: Run tests
         run: go test ./...
+
+      - name: Run vet
+        run: go vet ./...
+
+  race:
+    name: Race (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - .
+          - adapters/nethttp
+          - adapters/ginx
+          - adapters/fiberx
+          - adapters/gormx
+          - adapters/otel
+          - examples
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+
+      - name: Run race tests
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./...
+
+  soak-smoke:
+    name: Soak smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run bounded overload soak
+        env:
+          OBSKIT_SOAK_DURATION: 5s
+        run: go test -run '^TestSoak(Stdout|DirectHTTP)$' -timeout 30s .

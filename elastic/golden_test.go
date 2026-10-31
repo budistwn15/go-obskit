@@ -18,7 +18,7 @@ func TestRecordToDocument_GoldenSnapshot(t *testing.T) {
 		slog.String("db.statement", "SELECT * FROM users WHERE id=1"),
 		slog.String("custom.payload", `{"tenant_id":"t-1"}`),
 	)
-	doc := recordToDocumentWithJSONExpansion(rec, map[string]any{"environment": "test"}, true)
+	doc := recordToDocument(rec, map[string]any{"service.environment": "test"})
 
 	got, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {

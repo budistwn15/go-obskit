@@ -23,7 +23,7 @@ func buildStartedEvent(ctx context.Context, runID string, meta Meta, opts Option
 	return event{
 		level: slog.LevelInfo,
 		msg:   "job started",
-		attrs: append([]slog.Attr{slog.String("event", "job.started")}, attrs...),
+		attrs: append([]slog.Attr{slog.String("event.action", "job.started")}, attrs...),
 	}
 }
 
@@ -54,7 +54,7 @@ func buildCompletedEvent(
 	return event{
 		level: slog.LevelInfo,
 		msg:   "job completed",
-		attrs: append([]slog.Attr{slog.String("event", "job.completed")}, attrs...),
+		attrs: append([]slog.Attr{slog.String("event.action", "job.completed")}, attrs...),
 	}
 }
 
@@ -105,7 +105,7 @@ func buildFailedEvent(
 	return event{
 		level: slog.LevelError,
 		msg:   "job failed",
-		attrs: append([]slog.Attr{slog.String("event", "job.failed")}, attrs...),
+		attrs: append([]slog.Attr{slog.String("event.action", "job.failed")}, attrs...),
 	}
 }
 
@@ -121,7 +121,7 @@ func buildRetryEvent(ctx context.Context, runID string, meta Meta, retry RetryMe
 	return event{
 		level: slog.LevelWarn,
 		msg:   "job retry",
-		attrs: append([]slog.Attr{slog.String("event", "job.retry")}, attrs...),
+		attrs: append([]slog.Attr{slog.String("event.action", "job.retry")}, attrs...),
 	}
 }
 
@@ -135,7 +135,7 @@ func baseAttrs(ctx context.Context, runID string, meta Meta) []slog.Attr {
 		slog.String("layer", "job"),
 	}
 	if corr := correlation.ID(ctx); corr != "" {
-		attrs = append(attrs, slog.String("correlation_id", corr))
+		attrs = append(attrs, slog.String("correlation.id", corr))
 	}
 	if len(meta.Fields) > 0 {
 		attrs = append(attrs, slog.Any("job.fields", meta.Fields))

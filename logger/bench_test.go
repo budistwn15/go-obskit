@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strconv"
 	"testing"
 )
 
@@ -41,17 +42,47 @@ func BenchmarkLoggerInfoContextMeta(b *testing.B) {
 	}
 }
 
-func BenchmarkLoggerWithCommon(b *testing.B) {
+func BenchmarkLoggerWithFields(b *testing.B) {
 	l := New(Config{
 		ServiceName: "bench",
 		Environment: "production",
 		Level:       LevelInfo,
 		Output:      io.Discard,
 	})
-	l = WithCommon(l, slog.String("app.region", "ap-southeast-1"), slog.String("app.module", "billing"))
+	l = With(l, slog.String("app.region", "ap-southeast-1"), slog.String("app.module", "billing"))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		l.Info("enriched")
+	}
+}
+
+func BenchmarkLoggerInfoAttrs(b *testing.B) {
+	for _, count := range []int{1, 2, 10} {
+		b.Run(strconv.Itoa(count), func(b *testing.B) {
+			l := New(Config{ServiceName: "bench", Environment: "production", Output: io.Discard})
+			attrs := make([]slog.Attr, count)
+			for i := range attrs {
+				attrs[i] = slog.Int("value", i)
+			}
+			b.ResetTimer()
+			for b.Loop() {
+				l.LogAttrs(context.Background(), slog.LevelInfo, "attrs", attrs...)
+			}
+		})
+	}
+}
+
+func BenchmarkLoggerDisabled(b *testing.B) {
+	l := New(Config{ServiceName: "bench", Environment: "production", Level: LevelError, Output: io.Discard})
+	for b.Loop() {
+		l.Info("disabled")
+	}
+}
+
+func BenchmarkLoggerError(b *testing.B) {
+	l := New(Config{ServiceName: "bench", Environment: "production", Output: io.Discard})
+	for b.Loop() {
+		l.Error("failed", slog.String("error.type", "test"))
 	}
 }
 

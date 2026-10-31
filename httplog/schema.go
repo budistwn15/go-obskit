@@ -3,13 +3,24 @@ package httplog
 import "log/slog"
 
 func RequestAttrs(meta RequestMeta) []slog.Attr {
-	attrs := []slog.Attr{
-		slog.String("http.method", meta.Method),
-		slog.String("http.scheme", meta.Scheme),
-		slog.String("http.host", meta.Host),
-		slog.String("http.path", meta.Path),
-		slog.String("http.route", meta.Route),
-		slog.String("http.url", meta.URL),
+	attrs := make([]slog.Attr, 0, 6)
+	if meta.Method != "" {
+		attrs = append(attrs, slog.String("http.method", meta.Method))
+	}
+	if meta.Scheme != "" {
+		attrs = append(attrs, slog.String("http.scheme", meta.Scheme))
+	}
+	if meta.Host != "" {
+		attrs = append(attrs, slog.String("http.host", meta.Host))
+	}
+	if meta.Path != "" {
+		attrs = append(attrs, slog.String("http.path", meta.Path))
+	}
+	if meta.Route != "" {
+		attrs = append(attrs, slog.String("http.route", meta.Route))
+	}
+	if meta.URL != "" {
+		attrs = append(attrs, slog.String("http.url", meta.URL))
 	}
 	if len(meta.Query) > 0 {
 		attrs = append(attrs, slog.Any("http.query", meta.Query))
@@ -84,16 +95,16 @@ func EventAttrs(meta EventMeta) []slog.Attr {
 		slog.Bool("slow", meta.Slow),
 	}
 	if meta.CorrelationID != "" {
-		attrs = append(attrs, slog.String("correlation_id", meta.CorrelationID))
+		attrs = append(attrs, slog.String("correlation.id", meta.CorrelationID))
 	}
 	if meta.RequestID != "" {
 		attrs = append(attrs, slog.String("request_id", meta.RequestID))
 	}
 	if meta.TraceID != "" {
-		attrs = append(attrs, slog.String("trace_id", meta.TraceID))
+		attrs = append(attrs, slog.String("trace.id", meta.TraceID))
 	}
 	if meta.SpanID != "" {
-		attrs = append(attrs, slog.String("span_id", meta.SpanID))
+		attrs = append(attrs, slog.String("span.id", meta.SpanID))
 	}
 	if meta.Layer != "" {
 		attrs = append(attrs, slog.String("layer", meta.Layer))
@@ -109,7 +120,7 @@ func EventAttrs(meta EventMeta) []slog.Attr {
 		attrs = append(attrs, slog.Int64("slow_threshold_ms", meta.SlowThresholdMS))
 	}
 	if meta.ErrorKind != "" {
-		attrs = append(attrs, slog.String("error.kind", meta.ErrorKind))
+		attrs = append(attrs, slog.String("error.type", meta.ErrorKind))
 	}
 	if meta.ErrorMessage != "" {
 		attrs = append(attrs, slog.String("error.message", meta.ErrorMessage))

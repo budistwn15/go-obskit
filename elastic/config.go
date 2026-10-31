@@ -14,13 +14,6 @@ import (
 type Config struct {
 	Enabled bool
 
-	// Direct compatibility fields (as requested by app teams).
-	ElasticIndex    string
-	ElasticURL      string
-	ElasticUsername string
-	ElasticPassword string
-
-	// Generic fields (preferred for new code).
 	// Endpoint example: http://localhost:9200
 	Endpoint string
 	Index    string
@@ -33,7 +26,6 @@ type Config struct {
 	// Optional date suffix for index naming, e.g. "app-logs-2026.03.26".
 	IndexTimestampSuffix bool
 	IndexTimestampLayout string
-	IndexPattern         string
 
 	// HTTP timeout per bulk request.
 	Timeout time.Duration
@@ -57,9 +49,6 @@ type Config struct {
 
 	// Optional static fields appended to all shipped documents.
 	StaticFields map[string]any
-	// ExpandJSONFields parses and flattens JSON-looking string fields.
-	// Default false because it adds allocations and dynamic fields.
-	ExpandJSONFields bool
 
 	// Optional client override.
 	HTTPClient *http.Client
@@ -68,78 +57,33 @@ type Config struct {
 	OnError func(error)
 
 	// Connection/sink status logs to stdout (structured).
-	ConnectionLogToStdout  bool
-	ConnectionLogLevel     slog.Level
-	ConnectionLogAllChecks bool
-	ConnectionLogOutput    io.Writer
-
-	// Connection monitor (optional).
-	EnableMonitor   bool
-	MonitorInterval time.Duration
-	MonitorPath     string
-	OnMonitor       func(ConnectionStatus)
-
-	// Optional bootstrap for ingest pipeline + index template.
-	Bootstrap               bool
-	BootstrapOnStart        bool
-	PipelineName            string
-	TemplateName            string
-	ApplyPipelineToExisting bool
+	ConnectionLogToStdout bool
+	ConnectionLogLevel    slog.Level
+	ConnectionLogOutput   io.Writer
 }
 
 func DefaultConfig() Config {
 	return Config{
-		Enabled:                 false,
-		Endpoint:                "",
-		Index:                   "app-logs",
-		Timeout:                 2 * time.Second,
-		QueueSize:               2048,
-		BatchSize:               200,
-		FlushInterval:           1 * time.Second,
-		MaxRetries:              3,
-		RetryBackoff:            150 * time.Millisecond,
-		MaxBackoff:              2 * time.Second,
-		RecoverInternally:       true,
-		ConnectionLogToStdout:   true,
-		ConnectionLogLevel:      slog.LevelInfo,
-		ConnectionLogAllChecks:  false,
-		ConnectionLogOutput:     os.Stdout,
-		EnableMonitor:           true,
-		IndexTimestampLayout:    "2006.01.02",
-		IndexPattern:            "app-logs-*",
-		MonitorInterval:         15 * time.Second,
-		MonitorPath:             "/",
-		Bootstrap:               true,
-		BootstrapOnStart:        true,
-		PipelineName:            "obskit-default-pipeline",
-		TemplateName:            "obskit-default-template",
-		ApplyPipelineToExisting: true,
+		Enabled:               false,
+		Endpoint:              "",
+		Index:                 "app-logs",
+		Timeout:               2 * time.Second,
+		QueueSize:             2048,
+		BatchSize:             200,
+		FlushInterval:         1 * time.Second,
+		MaxRetries:            3,
+		RetryBackoff:          150 * time.Millisecond,
+		MaxBackoff:            2 * time.Second,
+		RecoverInternally:     true,
+		ConnectionLogToStdout: true,
+		ConnectionLogLevel:    slog.LevelInfo,
+		ConnectionLogOutput:   os.Stdout,
+		IndexTimestampLayout:  "2006.01.02",
 	}
 }
 
 func normalizeConfig(cfg Config) Config {
 	d := DefaultConfig()
-	// Backward/direct mapping.
-	if cfg.ElasticIndex != "" {
-		cfg.Index = cfg.ElasticIndex
-	} else if cfg.Index == "" {
-		cfg.Index = cfg.ElasticIndex
-	}
-	if cfg.ElasticURL != "" {
-		cfg.Endpoint = cfg.ElasticURL
-	} else if cfg.Endpoint == "" {
-		cfg.Endpoint = cfg.ElasticURL
-	}
-	if cfg.ElasticUsername != "" {
-		cfg.Username = cfg.ElasticUsername
-	} else if cfg.Username == "" {
-		cfg.Username = cfg.ElasticUsername
-	}
-	if cfg.ElasticPassword != "" {
-		cfg.Password = cfg.ElasticPassword
-	} else if cfg.Password == "" {
-		cfg.Password = cfg.ElasticPassword
-	}
 	if cfg.Index == "" {
 		cfg.Index = d.Index
 	}
@@ -168,33 +112,11 @@ func normalizeConfig(cfg Config) Config {
 	if strings.TrimSpace(cfg.IndexTimestampLayout) == "" {
 		cfg.IndexTimestampLayout = d.IndexTimestampLayout
 	}
-	if strings.TrimSpace(cfg.IndexPattern) == "" {
-		if strings.TrimSpace(cfg.Index) != "" {
-			cfg.IndexPattern = cfg.Index + "-*"
-		} else {
-			cfg.IndexPattern = d.IndexPattern
-		}
-	}
-	if cfg.MonitorInterval <= 0 {
-		cfg.MonitorInterval = d.MonitorInterval
-	}
-	if strings.TrimSpace(cfg.MonitorPath) == "" {
-		cfg.MonitorPath = d.MonitorPath
-	}
-	if !strings.HasPrefix(cfg.MonitorPath, "/") {
-		cfg.MonitorPath = "/" + cfg.MonitorPath
-	}
 	if cfg.ConnectionLogOutput == nil {
 		cfg.ConnectionLogOutput = d.ConnectionLogOutput
 	}
 	if cfg.ConnectionLogLevel == 0 {
 		cfg.ConnectionLogLevel = d.ConnectionLogLevel
-	}
-	if strings.TrimSpace(cfg.PipelineName) == "" {
-		cfg.PipelineName = d.PipelineName
-	}
-	if strings.TrimSpace(cfg.TemplateName) == "" {
-		cfg.TemplateName = d.TemplateName
 	}
 	cfg.StaticFields = cloneAnyMap(cfg.StaticFields)
 	// Safety-first default.

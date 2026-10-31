@@ -25,11 +25,6 @@ func WithLogger(ctx context.Context, l *slog.Logger) context.Context {
 	return context.WithValue(ctx, loggerKey, l)
 }
 
-// WithContext is an alias of WithLogger for ergonomics in application code.
-func WithContext(ctx context.Context, l *slog.Logger) context.Context {
-	return WithLogger(ctx, l)
-}
-
 func FromContext(ctx context.Context, fallback *slog.Logger) *slog.Logger {
 	if ctx != nil {
 		if l, ok := ctx.Value(loggerKey).(*slog.Logger); ok && l != nil {

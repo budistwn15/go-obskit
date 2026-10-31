@@ -1,146 +1,11 @@
 # go-obskit
 
-`go-obskit` is a generic Go observability and logging toolkit built for shared use across many repositories.
+Small, stdout-first structured logging for Go 1.26.
 
-It is modular: teams can adopt only what they need (logger only, HTTP adapters, outbound, DB, job logging, etc). It does not require ELK, OpenSearch, Loki, Datadog, Splunk, or any external collector. Logs go to stdout by default.
-
-## Features
-
-- Structured logging with `log/slog`
-- Stdout-first behavior by default
-- Correlation ID helpers for context propagation
-- Custom field enrichment patterns for app-specific metadata
-- Incoming HTTP logging abstraction (`httplog`)
-- Optional incoming adapters for `net/http`, Gin, and Fiber
-- Outbound HTTP observability via `http.RoundTripper`
-- Optional GORM logging integration
-- Job/scheduler/worker lifecycle logging
-- Sensitive header/JSON redaction helpers
-- Low-noise defaults with optional selective logging/sampling
-- Modular adoption across different app types
-
-## Repository layout
-
-```text
-logger/        structured logging core
-correlation/   correlation context helpers
-errorsx/       classified application errors
-httplog/       shared HTTP event model and capture policy
-outbound/      preferred outbound HTTP integration
-joblog/        job and worker lifecycle logging
-redact/        header and JSON redaction
-sampling/      deterministic success sampling
-configenv/     environment example generation
-sinkenv/       sink selection from environment
-elastic/       Elasticsearch/OpenSearch sink
-httpsink/      generic HTTP sink
-lokisink/      Loki sink
-adapters/      dependency-isolated framework integrations
-cmd/           executable tools
-examples/      runnable integrations
-```
-
-Public package ownership:
-
-| Package | Purpose | Status | Preferred entry point |
-| --- | --- | --- | --- |
-| `logger` | Logging core | Current | `logger.New` |
-| `correlation`, `errorsx`, `joblog`, `redact`, `sampling` | Shared observability helpers | Current | Package APIs |
-| `httplog` | Shared HTTP metadata and policy | Current | Used directly or through adapters |
-| `adapters/nethttp` | Incoming `net/http` logging | Preferred | `nethttp.Middleware` |
-| `adapters/ginx`, `adapters/fiberx`, `adapters/gormx` | Framework integrations | Current | Package middleware/logger constructors |
-| `outbound` | Outbound HTTP logging | Preferred | `outbound.NewTransport` or `outbound.WrapClient` |
-| `httpin` | Legacy incoming HTTP logging | Deprecated | Migrate to `adapters/nethttp`; removal only in a major release |
-| `httpout` | Legacy outbound HTTP logging | Deprecated | Migrate to `outbound`; removal only in a major release |
-| `elastic`, `httpsink`, `lokisink`, `sinkenv` | Optional log shipping | Current | `NewMiddleware` or `sinkenv.FromEnv` |
-| `configenv` | Environment example generation | Current | `configenv.Inject` |
-
-Legacy HTTP migration keeps configuration explicit:
-
-```go
-// Incoming: replace httpin.New(...) with the preferred net/http adapter.
-handler := nethttp.Middleware(log, nethttp.DefaultOptions())(mux)
-
-// Outbound: replace httpout.WrapClient(...) with outbound.WrapClient(...).
-client := outbound.WrapClient(existingClient, log, outbound.DefaultOptions())
-```
-
-The legacy packages remain available for compatibility and will not be removed before a major release.
-
-## Installation
-
-Core module:
-
-```bash
-go get github.com/budistwn15/go-obskit
-go mod tidy
-```
-
-Optional adapters (pick only what you use):
-
-```bash
-go get github.com/budistwn15/go-obskit/adapters/nethttp
-go get github.com/budistwn15/go-obskit/adapters/ginx
-go get github.com/budistwn15/go-obskit/adapters/fiberx
-go get github.com/budistwn15/go-obskit/adapters/gormx
-go get github.com/budistwn15/go-obskit/sinkenv
-go get github.com/budistwn15/go-obskit/httpsink
-go get github.com/budistwn15/go-obskit/lokisink
-go mod tidy
-```
-
-## Environment Variables (.env)
-
-Use [`.env.example`](./.env.example) as minimal starter.
-If you want Loki-only quick setup (5 keys), use [`.env.loki.example`](./.env.loki.example).
-For advanced knobs, see [`.env.full.example`](./.env.full.example).
-
-Important:
-- `obskit` **does not auto-read** `.env`.
-- Application should load env and map values into `logger.Config`, adapter options, sink configs (`sinkenv`/`elastic`/`httpsink`), `gormx.Options`, etc.
-
-Minimal vars:
-- `APP_NAME`
-- `APP_ENV`
-- `LOG_LEVEL`
-- `OBSKIT_SINK_PROVIDER` (`stdout` / `elastic` / `loki` / `http`)
-- `OBSKIT_ELASTIC_ENABLED` (default `false`)
-- `OBSKIT_ELASTIC_URL`
-- `OBSKIT_ELASTIC_INDEX`
-- `OBSKIT_ELASTIC_USERNAME` 
-- `OBSKIT_ELASTIC_PASSWORD` 
-
-For full tracing / advanced tuning:
-- `OBSKIT_HTTP_FORENSIC=true`
-- `OBSKIT_GORM_TRACING=true`
-
-Forensic options capture bodies, headers, and detailed metadata. Keep them disabled on default hot paths unless debugging needs justify the extra reads, redaction work, allocations, and log volume.
-
-Example loader/config wiring:
-- [`examples/config-from-env/main.go`](./examples/config-from-env/main.go)
-
-Safe env injector utility (optional):
-
-```bash
-go run github.com/budistwn15/go-obskit/cmd/obskit-envsync@latest
-```
-
-Full profile:
-
-```bash
-go run github.com/budistwn15/go-obskit/cmd/obskit-envsync@latest -profile full
-```
-
-Loki minimal profile (5 keys):
-
-```bash
-go run github.com/budistwn15/go-obskit/cmd/obskit-envsync@latest -profile loki
-```
-
-Behavior:
-- If `.env.example` exists: missing obskit keys are appended.
-- If `.env.example` does not exist: skip and exit success (no error).
-- Existing values are preserved (no override).
+- Default path: JSON lines to stdout, no goroutine, no network.
+- Optional delivery: bounded asynchronous HTTP, Elasticsearch/OpenSearch, or Loki.
+- Optional instrumentation: net/http, Gin, Fiber, GORM, outbound HTTP, jobs.
+- Optional APM correlation: OpenTelemetry in an independent module.
 
 ## Quick Start
 
@@ -150,807 +15,237 @@ package main
 import (
 	"log/slog"
 
-	"github.com/budistwn15/go-obskit/logger"
+	obskit "github.com/budistwn15/go-obskit"
 )
 
 func main() {
-	log := logger.New(logger.Config{
-		ServiceName: "my-service",
-		Environment: "local",
-		Level:       logger.LevelInfo,
+	log := obskit.New(obskit.Config{
+		Service:     "billing-api",
+		Environment: "production",
 	})
-
-	log.Info("service started", slog.String("component", "bootstrap"))
+	log.Info("ready", slog.String("region", "ap-southeast-1"))
 }
 ```
 
-## Usage
+Output is one JSON object per line. Stdout keeps `log/slog` keys `time`, `level`, and `msg` because renaming them adds an allocation to every call. Application fields use ECS-compatible names such as `service.name`, `service.environment`, `event.action`, `trace.id`, and `error.type`.
 
-### logger
+## Install
 
-Use `logger.New` to initialize the base logger.
-
-```go
-log := logger.New(logger.Config{
-	ServiceName:    "billing-api",
-	ServiceVersion: "1.3.0",
-	Environment:    "production",
-	Level:          logger.LevelInfo,
-	AddSource:      false,
-})
+```bash
+go get github.com/budistwn15/go-obskit
 ```
 
-Store/retrieve logger in context.
+Install only adapters used by the application:
 
-```go
-ctx = logger.WithContext(ctx, log)
-log2 := logger.FromContext(ctx, log)
-log2.Info("context logger ready")
+```bash
+go get github.com/budistwn15/go-obskit/adapters/nethttp
+go get github.com/budistwn15/go-obskit/adapters/ginx
+go get github.com/budistwn15/go-obskit/adapters/fiberx
+go get github.com/budistwn15/go-obskit/adapters/gormx
+go get github.com/budistwn15/go-obskit/adapters/otel
 ```
 
-Add reusable fields with `logger.WithCommon`.
+## Collector Setup
 
-```go
-workerLog := logger.WithCommon(log,
-	slog.String("module", "invoice_worker"),
-	slog.String("region", "ap-southeast-1"),
-)
-workerLog.Info("worker initialized")
+Stdout JSON works with Filebeat, Fluent Bit, or Logstash. Configure the collector to read one JSON object per line; do not parse nested JSON strings automatically.
+
+Filebeat:
+
+```yaml
+filebeat.inputs:
+  - type: filestream
+    paths: [/var/log/app/*.log]
+    parsers:
+      - ndjson:
+          target: ""
+          add_error_key: true
 ```
 
-### correlation
+Logstash:
 
-Set and read correlation IDs explicitly.
-
-```go
-ctx = correlation.WithID(ctx, "corr-123")
-id := correlation.ID(ctx)
-_ = id
+```text
+input { stdin { codec => json_lines } }
+output { elasticsearch { hosts => ["http://elasticsearch:9200"] } }
 ```
 
-Get existing or generate new ID.
+`collector_compat_test.go` verifies newline framing and stable field types.
+
+## Direct Delivery
+
+Use direct delivery only when no stdout collector exists. Runtime owns shutdown:
 
 ```go
-ctx, corrID := correlation.GetOrGenerate(ctx)
-_ = corrID
-```
-
-Generate standalone ID.
-
-```go
-corrID := correlation.Generate()
-_ = corrID
-```
-
-### custom fields
-
-One-off fields:
-
-```go
-log.Info("invoice paid",
-	slog.String("tenant_id", "t-1"),
-	slog.String("invoice_id", "inv-9001"),
-)
-```
-
-Derived logger with `.With(...)`:
-
-```go
-invoiceLog := log.With(
-	slog.String("tenant_id", "t-1"),
-	slog.String("feature_flag", "smart_retry"),
-)
-invoiceLog.Info("processing")
-```
-
-Context-scoped fields:
-
-```go
-ctx = logger.WithContextAttrs(ctx,
-	slog.String("tenant_id", "t-1"),
-	slog.String("request_source", "partner-api"),
-)
-ctx = logger.AppendContextAttrs(ctx, slog.String("invoice_id", "inv-9001"))
-log.InfoContext(ctx, "context-enriched log")
-```
-
-### adapters/nethttp
-
-Wrap standard `net/http` handlers with `nethttp.Middleware`.
-
-```go
-mux := http.NewServeMux()
-mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("ok"))
-})
-
-opts := nethttp.DefaultOptions()
-opts.SuccessSampleEvery = 10
-wrapped := nethttp.Middleware(log, opts)(mux)
-
-// incident mode (detail tinggi, opt-in)
-forensic := nethttp.ForensicOptions()
-_ = nethttp.Middleware(log, forensic)(mux)
-
-_ = http.ListenAndServe(":8080", wrapped)
-```
-
-### adapters/ginx
-
-Use as standard Gin middleware.
-
-```go
-r := gin.New()
-r.Use(ginx.Middleware(log, ginx.DefaultOptions()))
-r.GET("/health", func(c *gin.Context) {
-	c.Status(http.StatusOK)
-})
-```
-
-### adapters/fiberx
-
-Use as standard Fiber middleware.
-
-```go
-app := fiber.New()
-app.Use(fiberx.Middleware(log, fiberx.DefaultOptions()))
-app.Get("/health", func(c *fiber.Ctx) error {
-	return c.SendStatus(fiber.StatusOK)
-})
-```
-
-### outbound HTTP logging
-
-Wrap an existing transport/client with outbound observability.
-
-```go
-tr := outbound.NewTransport(nil, log, outbound.DefaultOptions())
-client := &http.Client{Transport: tr}
-
-// incident mode
-forensicTr := outbound.NewTransport(nil, log, outbound.ForensicOptions())
-_ = &http.Client{Transport: forensicTr}
-
-req, _ := http.NewRequest(http.MethodGet, "https://example.com/health", nil)
-resp, err := client.Do(req)
-_ = resp
-_ = err
-```
-
-### elastic (optional ELK/OpenSearch sink)
-
-```go
-elkMW := elastic.NewMiddleware(elastic.Config{
-	Enabled:         true,
-	ElasticURL:      "http://localhost:9200",
-	ElasticIndex:    "obskit-logs",
-	ElasticUsername: "elastic",
-	ElasticPassword: "secret",
-
-	IndexTimestampSuffix: true,    
-	IndexTimestampLayout: "2006.01.02",
-	IndexPattern:         "obskit-logs-*",
-
-	Bootstrap:               true,
-	BootstrapOnStart:        true,
-	PipelineName:            "obskit-default-pipeline",
-	TemplateName:            "obskit-default-template",
-	ApplyPipelineToExisting: true,
-
-	Timeout:       2 * time.Second,
-	MaxRetries:    3,
-	RetryBackoff:  150 * time.Millisecond,
-	MaxBackoff:    2 * time.Second,
-	QueueSize:     2048,
-	BatchSize:     200,
-	FlushInterval: 1 * time.Second,
-
-	BlockOnQueueFull: false,
-	EnableMonitor:    true,
-	MonitorInterval:  15 * time.Second,
-
-	// Opt-in: parses and flattens JSON-looking string fields at extra CPU/memory cost.
-	ExpandJSONFields: false,
-})
-
-log := logger.New(logger.Config{
-	ServiceName: "my-service",
-	Environment: "production",
-	Middlewares: []logger.HandlerMiddleware{elkMW.LoggerMiddleware()},
-})
-defer elkMW.Close(context.Background())
-```
-
-### sinkenv (provider from ENV, optional)
-
-Select sink provider only via env:
-
-```env
-OBSKIT_SINK_PROVIDER=stdout   # stdout | elastic | loki | http
-```
-
-```go
-sink := sinkenv.FromEnv()
-defer sink.Close(context.Background())
-
-log := logger.New(logger.Config{
-	ServiceName: "my-service",
-	Environment: "production",
-	Middlewares: sink.Middlewares,
-})
-```
-
-`stdout` remains default and safe fallback when provider/config is invalid.
-
-### httpsink (generic HTTP sink, optional)
-
-Use this for any backend that accepts HTTP log ingestion.
-
-```go
-mw := httpsink.NewMiddleware(httpsink.Config{
+sink := httpsink.NewMiddleware(httpsink.Config{
 	Enabled:  true,
 	Endpoint: "https://collector.example.com/logs",
-	Format:   httpsink.FormatNDJSON, // or FormatJSONArray
-	Headers: map[string]string{
-		"X-API-Key": "token",
-	},
+	APIKey:   os.Getenv("LOG_API_KEY"),
 })
-defer mw.Close(context.Background())
+runtime := obskit.Open(obskit.Config{Service: "billing-api"}, sink)
+defer runtime.Close(context.Background())
+
+log := runtime.Logger()
+log.Info("ready")
 ```
 
-### lokisink (Grafana Loki, optional)
+Available providers:
+
+| Package | Target |
+| --- | --- |
+| `httpsink` | Generic NDJSON or JSON-array HTTP endpoint |
+| `elastic` | Elasticsearch/OpenSearch bulk API |
+| `lokisink` | Loki push API |
+
+Delivery behavior:
+
+- Queue and batch count are bounded.
+- Enqueue is non-blocking by default; full queues increment `Dropped`.
+- Retry waits observe shutdown cancellation.
+- Only transport errors, HTTP 429, and HTTP 5xx are retried.
+- HTTP 4xx responses are permanent failures.
+- Response error bodies are capped at 1 KiB.
+- `Close(ctx)` stops intake, flushes accepted records, cancels in-flight work, and waits for the worker.
+- Stdout logging remains available when delivery is slow, down, or saturated.
+
+Inspect counters with `sink.Stats()`: `Enqueued`, `Dropped`, `Sent`, `Failed`, and `Retried`.
+
+Known ceiling: one unusually large record can create a large encoded payload. Queue length and batch count are bounded; a strict per-record byte limit remains required before the v2 release tag.
+
+## HTTP Instrumentation
+
+net/http:
 
 ```go
-mw := lokisink.NewMiddleware(lokisink.Config{
-	Enabled:  true,
-	Endpoint: "http://localhost:3100", // /loki/api/v1/push akan ditambahkan otomatis
-	Labels: map[string]string{
-		"service": "billing-api",
-		"env":     "production",
-	},
-})
-defer mw.Close(context.Background())
+handler := nethttp.Middleware(log, nethttp.DefaultOptions())(mux)
+http.ListenAndServe(":8080", handler)
 ```
 
-### adapters/gormx
-
-Attach `gormx.New` as GORM logger implementation.
+Gin:
 
 ```go
-opts := gormx.DefaultOptions()
-opts.LogSQLOnError = true  // default: true
-opts.LogSQLOnSlow = true   // default: true
-opts.LogSuccess = false    // default: low-noise
-
-// optional: attach app-specific query context for easier tracing
-opts.ErrorDetailFunc = func(ctx context.Context, err error, statement string, rows int64) map[string]any {
-	return map[string]any{
-		"query_name": "GetActiveUsers",
-		"expected":   "non-empty result",
-		"actual_rows": rows,
-	}
-}
-
-gormLog := gormx.New(log, opts)
-db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormLog})
-_ = db
-_ = err
+router.Use(ginx.Middleware(log, ginx.DefaultOptions()))
 ```
 
-### job/scheduler logging
-
-Use `joblog.Start` and run methods for lifecycle logging.
+Fiber:
 
 ```go
-ctx, run := joblog.Start(ctx, log, joblog.Meta{
-	JobName:     "daily-reconcile",
-	TriggerType: "cron",
-	Component:   "scheduler",
-	Operation:   "daily_reconcile",
-})
-
-run.AddProcessed(100)
-run.AddSucceeded(99)
-run.AddFailed(1)
-run.Retry(joblog.RetryMeta{Attempt: 2, MaxAttempts: 3, Reason: "timeout"})
-run.End(nil)
-
-_ = ctx
+app.Use(fiberx.Middleware(log, fiberx.DefaultOptions()))
 ```
 
-### errorsx
+Default options do not capture headers, query values, or bodies. `ForensicOptions()` is explicit and should be limited to incident debugging.
 
-Wrap and extract layered error metadata.
+## Outbound HTTP
 
 ```go
-err := errors.New("downstream timeout")
-err = errorsx.Wrap(err, errorsx.Meta{
-	Code:      "E_TIMEOUT",
-	Type:      "temporary",
-	Layer:     "integration",
-	Component: "payment_client",
-	Operation: "charge",
-})
-
-if ex, ok := errorsx.Extract(err); ok {
-	log.Error("wrapped error",
-		slog.String("error.code", ex.Meta.Code),
-		slog.String("error.layer", ex.Meta.Layer),
-	)
-}
+client := outbound.WrapClient(http.DefaultClient, log, outbound.DefaultOptions())
 ```
 
-## Practical API Reference
+The wrapper clones the client and request only when propagation requires it. Caller-owned clients, requests, and bodies remain usable.
 
-### logger
-
-- `logger.New(cfg Config) *slog.Logger`: create base logger with stdout fallback.
-- `logger.WithContext(ctx, log) context.Context`: put logger into context.
-- `logger.FromContext(ctx, fallback) *slog.Logger`: read logger from context.
-- `logger.WithCommon(log, attrs...) *slog.Logger`: derived logger with shared fields.
-- `logger.WithContextAttrs(ctx, attrs...) context.Context`: replace context attrs.
-- `logger.AppendContextAttrs(ctx, attrs...) context.Context`: append context attrs.
-- `logger.ContextAttrs(ctx) ([]slog.Attr, bool)`: read context attrs.
-
-### correlation
-
-- `correlation.WithID(ctx, id) context.Context`
-- `correlation.ID(ctx) string`
-- `correlation.GetOrGenerate(ctx) (context.Context, string)`
-- `correlation.Generate() string`
-
-### errorsx
-
-- `errorsx.Wrap(err, meta) error`
-- `errorsx.Extract(err) (*errorsx.Error, bool)`
-
-### incoming adapters
-
-- `nethttp.Middleware(log, opts) func(http.Handler) http.Handler`
-- `nethttp.ForensicOptions() Options`
-- `ginx.Middleware(log, opts) gin.HandlerFunc`
-- `ginx.ForensicOptions() Options`
-- `fiberx.Middleware(log, opts) fiber.Handler`
-- `fiberx.ForensicOptions() Options`
-
-### outbound
-
-- `outbound.NewTransport(base, log, opts) http.RoundTripper`
-- `outbound.ForensicOptions() Options`
-- `outbound.WrapClient(client, log, opts) *http.Client`
-
-### sinks
-
-- `sinkenv.FromEnv() Runtime`
-- `Runtime.Close(ctx) error`
-- `httpsink.NewMiddleware(cfg) *httpsink.Middleware`
-- `(*httpsink.Middleware).LoggerMiddleware() logger.HandlerMiddleware`
-- `(*httpsink.Middleware).Close(ctx) error`
-- `lokisink.NewMiddleware(cfg) *lokisink.Middleware`
-- `(*lokisink.Middleware).LoggerMiddleware() logger.HandlerMiddleware`
-- `(*lokisink.Middleware).Close(ctx) error`
-
-### gormx
-
-- `gormx.New(log, opts) gormlogger.Interface`
-- `gormx.TracingOptions() Options`
-- `gormx.WithQueryName(ctx, queryName) context.Context`
-- `gormx.WithExpected(ctx, expected) context.Context`
-
-### joblog
-
-- `joblog.Start(ctx, log, meta, opts...) (context.Context, *Run)`
-- `Run.End(err)`
-- `Run.Fail(err)`
-- `Run.Complete()`
-- `Run.Retry(meta RetryMeta)`
-- `Run.SetCounts(counts Counts)`
-- `Run.AddProcessed(n)`
-- `Run.AddSucceeded(n)`
-- `Run.AddFailed(n)`
-- `Run.AddSkipped(n)`
-- `Run.Logger() *slog.Logger`
-- `Run.Context() context.Context`
-
-## Custom Fields Patterns
-
-One-off:
+## GORM
 
 ```go
-log.Info("batch closed",
-	slog.String("tenant_id", "t-1"),
-	slog.String("batch_id", "batch-20260326-001"),
-)
+gormLogger := gormx.New(log, gormx.DefaultOptions())
+db, err := gorm.Open(dialector, &gorm.Config{Logger: gormLogger})
 ```
 
-Derived logger:
+Fast successful queries are ignored by default and do not call GORM's SQL callback. SQL value extraction, WHERE parsing, and query fingerprinting are not provided.
+
+## OpenTelemetry Correlation
+
+OpenTelemetry stays outside the root dependency graph:
 
 ```go
-batchLog := log.With(
-	slog.String("tenant_id", "t-1"),
-	slog.String("feature_flag", "reconcile_v2"),
-)
-batchLog.Info("start")
+ctx = otel.WithTrace(ctx)
+log.InfoContext(ctx, "request complete")
 ```
 
-Request/job scoped:
+An active span adds `trace.id` and `span.id`. No active span returns the original context in about 10 ns with zero allocations. OpenTelemetry has no transaction ID; vendor integrations can use dependency-free `obskit.WithTrace`.
 
-```go
-ctx = logger.WithContextAttrs(ctx,
-	slog.String("tenant_id", "t-1"),
-	slog.String("invoice_id", "inv-9001"),
-	slog.String("batch_id", "batch-20260326-001"),
-)
-log.InfoContext(ctx, "scoped log")
-```
+The package correlates logs only. It does not create or export traces or metrics.
 
-```go
-// incoming HTTP
-inOpts := nethttp.ForensicOptions()
-inOpts.SuccessSampleEvery = 5
+## Configuration
 
-// outbound HTTP
-outOpts := outbound.ForensicOptions()
-outOpts.SuccessSampleEvery = 5
+`go-obskit` does not read `.env` files. Applications own configuration loading and pass explicit values to `obskit.Config` or provider configs.
 
-// gorm
-dbOpts := gormx.TracingOptions()
-dbOpts.SuccessSampleEvery = 10
-```
+Stdout defaults:
 
-## Linting
+| Behavior | Default |
+| --- | --- |
+| Format | JSON lines |
+| Output | `os.Stdout` |
+| Level | info |
+| Direct delivery | disabled |
+| Network calls | none |
+| Background goroutines | none |
+| Header/query/body capture | disabled |
+| Sampling | disabled |
 
-Run lint locally with `golangci-lint`:
+## v1 to v2 Migration
 
-```bash
-golangci-lint run ./...
-```
+| Removed v1 API | v2 replacement |
+| --- | --- |
+| `logger.New` for common setup | `obskit.New` |
+| manual middleware and sink close | `obskit.Open` and `Runtime.Close` |
+| `httpin` | `adapters/nethttp` |
+| `httpout` | `outbound` |
+| `sinkenv` | explicit provider config |
+| `configenv`, `cmd/obskit-envsync` | application-owned config |
+| Elastic bootstrap and monitor | deployment tooling and platform health checks |
+| `logger.WithCommon` | `logger.With` |
+| `logger.WithContext` | `logger.WithLogger` |
+| Elastic compatibility aliases | `Endpoint`, `Index`, `Username`, `Password` |
+| automatic JSON expansion | explicit structured attributes |
+| GORM WHERE values/fingerprint | query type and table only |
 
-For adapter/examples modules:
+This migration is intentionally breaking. Compatibility forwarding packages were not retained because they recreate the package count and maintenance cost removed by v2.
 
-```bash
-cd adapters/nethttp
-golangci-lint run ./...
-```
+## Performance
 
-```bash
-cd adapters/ginx
-golangci-lint run ./...
-```
+Measured on Intel Core Ultra 5 235U, Windows, Go 1.26:
 
-```bash
-cd adapters/fiberx
-golangci-lint run ./...
-```
+| Path | Result |
+| --- | --- |
+| Basic stdout | `0 B/op`, `0 allocs/op` |
+| Disabled stdout | about `8 ns/op`, `0 allocs/op` |
+| Direct enqueue | `65-73 ns/op`, `0 allocs/op` |
+| Full queue/drop | `33-35 ns/op`, `0 allocs/op` |
+| HTTP NDJSON, 100 records | `42-44 us`, `30.5 KB`, `101 allocs` |
+| GORM ignored fast success | `10-11 ns/op`, `0 allocs/op` |
+| OTel without active span | `9.65-10.02 ns/op`, `0 allocs/op` |
 
-```bash
-cd adapters/gormx
-golangci-lint run ./...
-```
+CI enforces zero-allocation stdout/enqueue and a maximum of 120 allocations for a 100-record HTTP batch.
 
-```bash
-cd examples
-golangci-lint run ./...
-```
+## Validation
 
-
-## Example
-
-Logger basic:
-
-```json
-{
-  "time": "2026-03-26T13:12:40.011Z",
-  "level": "INFO",
-  "msg": "service started",
-  "service_name": "billing-api",
-  "service_version": "1.3.0",
-  "environment": "production",
-  "host": "node-a1",
-  "instance_id": "billing-api-7fd6"
-}
-```
-
-Logger + custom fields:
-
-```json
-{
-  "time": "2026-03-26T13:12:40.500Z",
-  "level": "INFO",
-  "msg": "invoice paid",
-  "service_name": "billing-api",
-  "tenant_id": "t-1",
-  "invoice_id": "inv-9001",
-  "feature_flag": "smart_retry"
-}
-```
-
-Incoming HTTP complete (net/http / Gin / Fiber):
-
-```json
-{
-  "time": "2026-03-26T13:12:44.102Z",
-  "level": "INFO",
-  "msg": "http request completed",
-  "event": "http.request.complete",
-  "service_name": "billing-api",
-  "correlation_id": "corr-7f6a",
-  "http.method": "GET",
-  "http.path": "/v1/invoices",
-  "http.route": "/v1/invoices",
-  "http.status_code": 200,
-  "agent.name": "postman",
-  "agent.type": "api_client",
-  "agent.device": "desktop",
-  "source.ip": "10.10.1.54",
-  "source.port": 53718,
-  "target.host": "api.internal.local",
-  "target.port": 443,
-  "duration_ms": 23,
-  "slow": false,
-  "threshold_ms": 1000
-}
-```
-
-Incoming HTTP error:
-
-```json
-{
-  "time": "2026-03-26T13:12:44.900Z",
-  "level": "ERROR",
-  "msg": "http request failed",
-  "event": "http.request.error",
-  "service_name": "billing-api",
-  "correlation_id": "corr-7f6a",
-  "http.method": "POST",
-  "http.path": "/v1/charge",
-  "http.status_code": 500,
-  "error.kind": "http_error",
-  "error.message": "Internal Server Error",
-  "duration_ms": 145,
-  "slow": false,
-  "threshold_ms": 1000
-}
-```
-
-Outbound HTTP complete:
-
-```json
-{
-  "time": "2026-03-26T13:12:45.301Z",
-  "level": "INFO",
-  "msg": "outbound http request completed",
-  "event": "http.outbound.complete",
-  "service_name": "billing-api",
-  "layer": "integration",
-  "component": "http_client",
-  "operation": "outbound_request",
-  "correlation_id": "corr-7f6a",
-  "http.method": "GET",
-  "http.host": "profile.internal",
-  "http.status_code": 200,
-  "duration_ms": 18,
-  "slow": false,
-  "threshold_ms": 1000
-}
-```
-
-Outbound HTTP error:
-
-```json
-{
-  "time": "2026-03-26T13:12:45.781Z",
-  "level": "ERROR",
-  "msg": "outbound http request failed",
-  "event": "http.outbound.error",
-  "service_name": "billing-api",
-  "layer": "integration",
-  "component": "http_client",
-  "operation": "outbound_request",
-  "correlation_id": "corr-7f6a",
-  "http.method": "POST",
-  "http.host": "payments.internal",
-  "error.kind": "context_deadline_exceeded",
-  "error.message": "context deadline exceeded",
-  "duration_ms": 2001,
-  "slow": true,
-  "threshold_ms": 1000
-}
-```
-
-GORM query complete (jika `LogSuccess=true`):
-
-```json
-{
-  "time": "2026-03-26T13:12:46.001Z",
-  "level": "INFO",
-  "msg": "gorm query",
-  "event": "db.query.complete",
-  "service_name": "billing-api",
-  "layer": "repository",
-  "component": "gorm",
-  "operation": "db.query",
-  "db.system": "gorm",
-  "db.rows_affected": 3,
-  "db.result_status": "success",
-  "db.statement": "SELECT * FROM invoices WHERE status='paid'",
-  "db.statement_truncated": false,
-  "duration_ms": 12
-}
-```
-
-GORM slow query:
-
-```json
-{
-  "time": "2026-03-26T13:12:46.119Z",
-  "level": "WARN",
-  "msg": "gorm slow query",
-  "event": "db.query.slow",
-  "service_name": "billing-api",
-  "layer": "repository",
-  "component": "gorm",
-  "operation": "db.query",
-  "correlation_id": "corr-7f6a",
-  "db.system": "gorm",
-  "db.rows_affected": 124,
-  "db.result_status": "success",
-  "db.statement": "SELECT * FROM users WHERE status = 'active'",
-  "db.statement_truncated": false,
-  "duration_ms": 612,
-  "slow": true,
-  "threshold_ms": 250
-}
-```
-
-GORM error:
-
-```json
-{
-  "time": "2026-03-26T13:12:46.401Z",
-  "level": "ERROR",
-  "msg": "gorm query error",
-  "event": "db.query.error",
-  "service_name": "billing-api",
-  "layer": "repository",
-  "component": "gorm",
-  "operation": "db.query",
-  "db.query_type": "UPDATE",
-  "db.statement": "UPDATE invoices SET status='paid' WHERE id='inv-9001'",
-  "db.statement_truncated": false,
-  "db.result_status": "error",
-  "error.kind": "db_error",
-  "error.message": "deadlock detected",
-  "error.expected": "single-row update committed",
-  "error.actual": "deadlock detected by database",
-  "error.details": {
-    "query_name": "MarkInvoicePaid",
-    "retryable": true
-  },
-  "duration_ms": 41
-}
-```
-
-Job started:
-
-```json
-{
-  "time": "2026-03-26T13:12:46.700Z",
-  "level": "INFO",
-  "msg": "job started",
-  "event": "job.started",
-  "service_name": "billing-worker",
-  "layer": "job",
-  "job.run_id": "job_7fd1c2a3",
-  "job.name": "daily-reconcile",
-  "job.trigger_type": "cron"
-}
-```
-
-Job completed:
-
-```json
-{
-  "time": "2026-03-26T13:12:47.004Z",
-  "level": "INFO",
-  "msg": "job completed",
-  "event": "job.completed",
-  "service_name": "billing-worker",
-  "layer": "job",
-  "job.run_id": "job_7fd1c2a3",
-  "job.name": "daily-reconcile",
-  "duration_ms": 1840,
-  "slow": false,
-  "threshold_ms": 5000,
-  "job.count.processed": 1000,
-  "job.count.succeeded": 998,
-  "job.count.failed": 2
-}
-```
-
-Job retry:
-
-```json
-{
-  "time": "2026-03-26T13:12:47.110Z",
-  "level": "WARN",
-  "msg": "job retry",
-  "event": "job.retry",
-  "service_name": "billing-worker",
-  "layer": "job",
-  "job.run_id": "job_7fd1c2a3",
-  "job.retry_attempt": 2,
-  "job.retry_max_attempts": 3,
-  "job.retry_reason": "timeout",
-  "job.retry_delay_ms": 30000
-}
-```
-
-Job failed:
-
-```json
-{
-  "time": "2026-03-26T13:12:47.220Z",
-  "level": "ERROR",
-  "msg": "job failed",
-  "event": "job.failed",
-  "service_name": "billing-worker",
-  "layer": "job",
-  "job.run_id": "job_7fd1c2a3",
-  "duration_ms": 1840,
-  "error.message": "downstream timeout",
-  "error.code": "E_TIMEOUT",
-  "error.layer": "integration",
-  "error.component": "payment_client",
-  "error.operation": "charge"
-}
-```
-
-redaction:
-
-```json
-{
-  "event": "http.request.complete",
-  "http.request.headers": {
-    "authorization": "***redacted***",
-    "x-api-key": "***redacted***",
-    "content-type": "application/json"
-  },
-  "http.request.body": "{\"username\":\"john\",\"password\":\"***redacted***\",\"token\":\"***redacted***\"}"
-}
-```
-
-## Testing
-
-Run all tests:
+Run all modules:
 
 ```powershell
 ./test-all.ps1
 ```
 
-This runs `go test ./...` and `go vet ./...` for the root module, every adapter module, and examples without merging their `go.mod` files.
+Run optional soak locally:
 
-Run race tests:
-
-```bash
-go test -race ./...
+```powershell
+$env:OBSKIT_SOAK_DURATION = "60s"
+go test -run '^TestSoak(Stdout|DirectHTTP)$' -v .
 ```
 
-For adapter submodules:
+Linux CI runs test, vet, race, and bounded overload smoke for every module. A 30-60 minute soak and successful Linux race run remain mandatory before tagging v2.
 
-```bash
-cd adapters/nethttp && go test ./...
-cd ../ginx && go test ./...
-cd ../fiberx && go test ./...
-cd ../gormx && go test ./...
+## Repository Layout
+
+```text
+logger/          lower-level slog core
+httplog/         shared HTTP capture and event policy
+outbound/        outbound HTTP transport
+joblog/          job lifecycle logging
+redact/          header and JSON redaction
+sampling/        deterministic sampling
+elastic/         optional Elastic/OpenSearch delivery
+httpsink/        optional generic HTTP delivery
+lokisink/        optional Loki delivery
+adapters/        independent framework/APM modules
+examples/        runnable integrations
 ```
 
-## License
-
-This project is licensed under the MIT License.
-See [LICENSE](LICENSE).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+Runnable examples live under `examples/`. Public package import paths are stable within v2.

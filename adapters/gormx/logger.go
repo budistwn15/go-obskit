@@ -87,7 +87,6 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 	}
 
 	statement, rows := fc()
-	rawStatement := statement
 	statementTruncated := false
 	if l.opts.MaxSQLLen > 0 && len(statement) > l.opts.MaxSQLLen {
 		statement = statement[:l.opts.MaxSQLLen]
@@ -99,15 +98,6 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 	if ctxDB := DBSystem(ctx); ctxDB != "" {
 		dbSystem = ctxDB
 	}
-	var whereCols []string
-	var whereVals map[string]string
-	var whereConds []whereCondition
-	if l.opts.IncludeWhereDetails {
-		whereCols, whereVals, whereConds = extractWhere(
-			rawStatement, l.opts.MaxWhereConditions, l.opts.RedactWhereSensitiveValues,
-		)
-	}
-
 	attrs := []slog.Attr{
 		slog.String(FieldDBSystem, dbSystem),
 		slog.Int64(FieldDurationMS, elapsed.Milliseconds()),
@@ -115,9 +105,6 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 		slog.String(FieldComponent, "gorm"),
 		slog.String(FieldOperation, "db.query"),
 		slog.String(FieldDBQueryType, queryType),
-	}
-	if fp := fingerprintSQL(rawStatement); fp != "" {
-		attrs = append(attrs, slog.String(FieldDBFingerprint, fp))
 	}
 	if table != "" {
 		attrs = append(attrs, slog.String(FieldDBTable, table))
@@ -127,11 +114,6 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 	}
 	if l.opts.LogRowsAffected {
 		attrs = append(attrs, slog.Int64(FieldDBRows, rows))
-	}
-	if l.opts.IncludeWhereDetails && len(whereCols) > 0 {
-		attrs = append(attrs, slog.Any(FieldDBWhereColumns, whereCols))
-		attrs = append(attrs, slog.Any(FieldDBWhereValues, whereVals))
-		attrs = append(attrs, slog.Any(FieldDBWhereConditions, whereConds))
 	}
 	if l.opts.LogSQL {
 		attrs = append(attrs, slog.String(FieldDBStatement, statement))
