@@ -10,12 +10,13 @@ import (
 
 type responseCaptureWriter struct {
 	http.ResponseWriter
-	status    int
-	sizeBytes int64
-	capture   bool
-	maxBytes  int
-	body      bytes.Buffer
-	truncated bool
+	status      int
+	sizeBytes   int64
+	capture     bool
+	maxBytes    int
+	body        bytes.Buffer
+	truncated   bool
+	wroteHeader bool
 }
 
 func newResponseCaptureWriter(w http.ResponseWriter, capture bool, maxBytes int) *responseCaptureWriter {
@@ -28,11 +29,18 @@ func newResponseCaptureWriter(w http.ResponseWriter, capture bool, maxBytes int)
 }
 
 func (w *responseCaptureWriter) WriteHeader(status int) {
+	if w.wroteHeader {
+		return
+	}
+	w.wroteHeader = true
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
 
 func (w *responseCaptureWriter) Write(p []byte) (int, error) {
+	if !w.wroteHeader {
+		w.wroteHeader = true
+	}
 	if w.capture {
 		w.captureBytes(p)
 	}
@@ -45,6 +53,8 @@ func (w *responseCaptureWriter) ReadFrom(r io.Reader) (int64, error) {
 	n, err := io.Copy(w, r)
 	return n, err
 }
+
+func (w *responseCaptureWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *responseCaptureWriter) bodyString() string {
 	return w.body.String()

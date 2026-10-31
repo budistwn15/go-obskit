@@ -27,7 +27,7 @@ func BenchmarkTraceSlowQueryWarn(b *testing.B) {
 			MaxSQLLen:     256,
 		},
 	).(gormlogger.Interface)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		gl.Trace(
@@ -52,7 +52,7 @@ func BenchmarkTraceError(b *testing.B) {
 			LogSQL: true,
 		},
 	).(gormlogger.Interface)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		gl.Trace(
@@ -78,7 +78,7 @@ func BenchmarkTraceSuccessSampled(b *testing.B) {
 			SuccessSampleEvery: 10,
 		},
 	).(gormlogger.Interface)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		gl.Trace(
@@ -86,5 +86,24 @@ func BenchmarkTraceSuccessSampled(b *testing.B) {
 				return "SELECT 1", 1
 			}, nil,
 		)
+	}
+}
+
+func BenchmarkTraceFastSuccessDefault(b *testing.B) {
+	log := logger.New(logger.Config{Output: io.Discard})
+	gl := New(log, DefaultOptions()).(gormlogger.Interface)
+	called := 0
+	fc := func() (string, int64) {
+		called++
+		return "SELECT * FROM users WHERE status = 'active'", 1
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		gl.Trace(context.Background(), time.Now(), fc, nil)
+	}
+	b.StopTimer()
+	if called != 0 {
+		b.Fatalf("fc called %d times for an event that cannot be logged", called)
 	}
 }

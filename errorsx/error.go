@@ -1,3 +1,4 @@
+// Package errorsx adds stable classification and metadata to application errors.
 package errorsx
 
 import "fmt"

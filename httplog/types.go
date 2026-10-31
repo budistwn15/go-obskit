@@ -1,3 +1,4 @@
+// Package httplog defines shared HTTP logging metadata, events, and capture policy.
 package httplog
 
 import "time"

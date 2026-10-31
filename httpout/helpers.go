@@ -18,7 +18,7 @@ import (
 )
 
 type bodyCapture struct {
-	body string
+	body      string
 	truncated bool
 }
 
@@ -70,6 +70,7 @@ func captureRequestBody(req *http.Request, maxBytes int) (bodyCapture, error) {
 	}
 	readLimit := int64(maxBytes + 1)
 	buf, err := io.ReadAll(io.LimitReader(req.Body, readLimit))
+	req.Body = &replayBody{Reader: io.MultiReader(bytes.NewReader(buf), req.Body), Closer: req.Body}
 	if err != nil {
 		return bodyCapture{}, err
 	}
@@ -77,10 +78,6 @@ func captureRequestBody(req *http.Request, maxBytes int) (bodyCapture, error) {
 	captured := buf
 	if truncated {
 		captured = captured[:maxBytes]
-	}
-	req.Body = &replayBody{
-		Reader: io.MultiReader(bytes.NewReader(buf), req.Body),
-		Closer: req.Body,
 	}
 	return bodyCapture{body: string(captured), truncated: truncated}, nil
 }
@@ -94,6 +91,7 @@ func captureResponseBody(resp *http.Response, maxBytes int) (bodyCapture, error)
 	}
 	readLimit := int64(maxBytes + 1)
 	buf, err := io.ReadAll(io.LimitReader(resp.Body, readLimit))
+	resp.Body = &replayBody{Reader: io.MultiReader(bytes.NewReader(buf), resp.Body), Closer: resp.Body}
 	if err != nil {
 		return bodyCapture{}, err
 	}
@@ -101,10 +99,6 @@ func captureResponseBody(resp *http.Response, maxBytes int) (bodyCapture, error)
 	captured := buf
 	if truncated {
 		captured = captured[:maxBytes]
-	}
-	resp.Body = &replayBody{
-		Reader: io.MultiReader(bytes.NewReader(buf), resp.Body),
-		Closer: resp.Body,
 	}
 	return bodyCapture{body: string(captured), truncated: truncated}, nil
 }

@@ -1,6 +1,6 @@
 module github.com/budistwn15/go-obskit/adapters/ginx
 
-go 1.25.0
+go 1.26
 
 require (
 	github.com/budistwn15/go-obskit v0.0.0

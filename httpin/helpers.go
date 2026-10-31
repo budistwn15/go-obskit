@@ -2,23 +2,18 @@ package httpin
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 
+	"github.com/budistwn15/go-obskit/correlation"
 	"github.com/budistwn15/go-obskit/logger"
 )
 
 func newCorrelationID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "corr-fallback"
-	}
-	return hex.EncodeToString(b[:])
+	return correlation.Generate()
 }
 
 func requestScheme(r *http.Request) string {
@@ -148,24 +143,20 @@ func captureRequestBody(r *http.Request, maxBytes int) (bodyCapture, error) {
 	if maxBytes <= 0 {
 		maxBytes = 4096
 	}
-	
+
 	readLimit := int64(maxBytes + 1)
 	buf, err := io.ReadAll(io.LimitReader(r.Body, readLimit))
+	r.Body = &replayBody{Reader: io.MultiReader(bytes.NewReader(buf), r.Body), Closer: r.Body}
 	if err != nil {
 		return bodyCapture{}, err
 	}
-	
+
 	truncated := len(buf) > maxBytes
 	captured := buf
 	if truncated {
 		captured = captured[:maxBytes]
 	}
-	
-	r.Body = &replayBody{
-		Reader: io.MultiReader(bytes.NewReader(buf), r.Body),
-		Closer: r.Body,
-	}
-	
+
 	return bodyCapture{
 		body:      string(captured),
 		truncated: truncated,
@@ -181,7 +172,7 @@ func redactJSONBody(body string, redactor *logger.Redactor) (string, error) {
 	if redactor == nil || strings.TrimSpace(body) == "" {
 		return body, nil
 	}
-	
+
 	var payload any
 	if err := json.Unmarshal([]byte(body), &payload); err != nil {
 		return body, err
@@ -220,11 +211,11 @@ func redactAny(v any, redactor *logger.Redactor) any {
 func extractTraceSpanID(r *http.Request) (string, string) {
 	traceID := strings.TrimSpace(r.Header.Get("X-Trace-ID"))
 	spanID := strings.TrimSpace(r.Header.Get("X-Span-ID"))
-	
+
 	if traceID != "" || spanID != "" {
 		return traceID, spanID
 	}
-	
+
 	traceparent := strings.TrimSpace(r.Header.Get("traceparent"))
 	if traceparent == "" {
 		return "", ""

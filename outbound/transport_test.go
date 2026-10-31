@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -57,7 +58,7 @@ func TestCorrelationPropagationAndDuration(t *testing.T) {
 	tr := NewTransport(rt, log, DefaultOptions())
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/health", nil)
 	req = req.WithContext(correlation.WithID(context.Background(), "corr-1"))
-	
+
 	_, err := tr.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
@@ -132,6 +133,41 @@ func TestRequestBodyRestoreAndRedactionTruncation(t *testing.T) {
 	}
 }
 
+func TestRequestBodyRestoreWhenCaptureReadReturnsDataAndError(t *testing.T) {
+	log := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: io.Discard})
+	opts := DefaultOptions()
+	opts.CaptureRequestBody = true
+	opts.LogRequestStart = true
+	received := ""
+	tr := NewTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		received = string(body)
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody}, nil
+	}), log, opts)
+	req, _ := http.NewRequest(http.MethodPost, "http://example.com", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = io.NopCloser(&partialErrorReader{data: []byte(`{"name":"john"}`)})
+
+	_, _ = tr.RoundTrip(req)
+
+	if received != `{"name":"john"}` {
+		t.Fatalf("transport body = %q, want complete original body", received)
+	}
+}
+
+type partialErrorReader struct {
+	data []byte
+	done bool
+}
+
+func (r *partialErrorReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+	r.done = true
+	return copy(p, r.data), io.ErrUnexpectedEOF
+}
+
 func TestResponseBodyRestore(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
@@ -167,6 +203,30 @@ func TestResponseBodyRestore(t *testing.T) {
 	}
 }
 
+func TestResponseBodyRestoreWhenCaptureReadReturnsDataAndError(t *testing.T) {
+	log := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: io.Discard})
+	opts := DefaultOptions()
+	opts.CaptureResponseBody = true
+	opts.LogErrorBodies = true
+	tr := NewTransport(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(&partialErrorReader{data: []byte(`{"error":"boom"}`)}),
+		}, nil
+	}), log, opts)
+	req, _ := http.NewRequest(http.MethodGet, "http://example.com", nil)
+
+	resp, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if got := string(body); got != `{"error":"boom"}` {
+		t.Fatalf("caller response body = %q, want complete original body", got)
+	}
+}
+
 func TestClassifyGenericTransportError(t *testing.T) {
 	if got := classifyError(errors.New("x")); got != "transport_error" {
 		t.Fatalf("unexpected classify: %s", got)
@@ -187,10 +247,10 @@ func TestDefaultLowNoise(t *testing.T) {
 			},
 		), log, DefaultOptions(),
 	)
-	
+
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/health", nil)
 	_, _ = tr.RoundTrip(req)
-	
+
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
 	if _, ok := last["http.request.body"]; ok {
@@ -218,7 +278,7 @@ func TestPanicSafeLoggingDoesNotBreakFlow(t *testing.T) {
 			},
 		), log, DefaultOptions(),
 	)
-	
+
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/health", nil)
 	resp, err := tr.RoundTrip(req)
 	if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
@@ -233,7 +293,7 @@ func TestDisableAllRequestLogs(t *testing.T) {
 	opts.LogRequestStart = false
 	opts.LogRequestComplete = false
 	opts.LogRequestError = false
-	
+
 	tr := NewTransport(
 		roundTripFunc(
 			func(req *http.Request) (*http.Response, error) {
@@ -245,12 +305,27 @@ func TestDisableAllRequestLogs(t *testing.T) {
 			},
 		), log, opts,
 	)
-	
+
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/health", nil)
 	_, _ = tr.RoundTrip(req)
-	
+
 	if strings.TrimSpace(buf.String()) != "" {
 		t.Fatalf("expected no logs when all log flags are disabled")
+	}
+}
+
+func TestWrapClientDoesNotMutateCaller(t *testing.T) {
+	base := roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, nil })
+	client := &http.Client{Transport: base, Timeout: time.Second}
+	wrapped := WrapClient(client, slog.Default(), DefaultOptions())
+	if wrapped == client {
+		t.Fatal("WrapClient must return a shallow copy")
+	}
+	if _, ok := client.Transport.(roundTripFunc); !ok {
+		t.Fatal("caller transport was mutated")
+	}
+	if wrapped.Timeout != client.Timeout {
+		t.Fatalf("timeout = %v, want %v", wrapped.Timeout, client.Timeout)
 	}
 }
 
@@ -268,7 +343,7 @@ func TestSelectiveLoggingHooks(t *testing.T) {
 	opts.ShouldLogError = func(meta httplog.DecisionMeta) bool {
 		return true
 	}
-	
+
 	tr := NewTransport(
 		roundTripFunc(
 			func(req *http.Request) (*http.Response, error) {
@@ -280,10 +355,10 @@ func TestSelectiveLoggingHooks(t *testing.T) {
 			},
 		), log, opts,
 	)
-	
+
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/health", nil)
 	_, _ = tr.RoundTrip(req)
-	
+
 	logs := parseLogs(t, buf.String())
 	if len(logs) != 0 {
 		t.Fatalf("expected no logs because hook filtered start+complete and no error")
@@ -295,7 +370,7 @@ func TestSlowFieldOnComplete(t *testing.T) {
 	log := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
 	opts := DefaultOptions()
 	opts.SlowThreshold = 1 * time.Millisecond
-	
+
 	tr := NewTransport(
 		roundTripFunc(
 			func(req *http.Request) (*http.Response, error) {
@@ -308,10 +383,10 @@ func TestSlowFieldOnComplete(t *testing.T) {
 			},
 		), log, opts,
 	)
-	
+
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/slow", nil)
 	_, _ = tr.RoundTrip(req)
-	
+
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
 	if slow, ok := last["slow"].(bool); !ok || !slow {
@@ -330,7 +405,7 @@ func TestSuccessSamplingKeepsErrorsAndSlow(t *testing.T) {
 	log := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
 	opts := DefaultOptions()
 	opts.SuccessSampleEvery = 1000
-	
+
 	successRT := roundTripFunc(
 		func(req *http.Request) (*http.Response, error) {
 			return &http.Response{
@@ -355,14 +430,14 @@ func TestSuccessSamplingKeepsErrorsAndSlow(t *testing.T) {
 			}, nil
 		},
 	)
-	
+
 	trSuccess := NewTransport(successRT, log, opts)
 	req1, _ := http.NewRequest(http.MethodGet, "http://example.com/success", nil)
 	_, _ = trSuccess.RoundTrip(req1)
 	if strings.TrimSpace(buf.String()) != "" {
 		t.Fatalf("sampled success log should be skipped")
 	}
-	
+
 	trErr := NewTransport(errRT, log, opts)
 	req2, _ := http.NewRequest(http.MethodGet, "http://example.com/error", nil)
 	_, _ = trErr.RoundTrip(req2)
@@ -370,7 +445,7 @@ func TestSuccessSamplingKeepsErrorsAndSlow(t *testing.T) {
 	if len(logs) == 0 || logs[len(logs)-1]["event"] != "http.outbound.error" {
 		t.Fatalf("error logs must not be sampled out")
 	}
-	
+
 	buf.Reset()
 	opts.SlowThreshold = 1 * time.Millisecond
 	trSlow := NewTransport(slowRT, log, opts)

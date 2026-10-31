@@ -85,6 +85,54 @@ func TestMiddleware_CorrelationPropagationAndBodyRestore(t *testing.T) {
 	}
 }
 
+func TestMiddleware_PreservesBodyWhenCaptureReadReturnsDataAndError(t *testing.T) {
+	opts := DefaultOptions()
+	opts.CaptureRequestBody = true
+	received := ""
+	h := Middleware(nil, opts)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received = string(body)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = io.NopCloser(&partialErrorReader{data: []byte(`{"name":"john"}`)})
+
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if received != `{"name":"john"}` {
+		t.Fatalf("downstream body = %q, want complete original body", received)
+	}
+}
+
+func TestMiddleware_RecordsFirstResponseStatus(t *testing.T) {
+	var buf bytes.Buffer
+	log := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
+	h := Middleware(log, DefaultOptions())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+
+	logs := parseLines(t, buf.String())
+	if got := int(logs[len(logs)-1]["http.status_code"].(float64)); got != http.StatusCreated {
+		t.Fatalf("logged status = %d, want first status %d", got, http.StatusCreated)
+	}
+}
+
+type partialErrorReader struct {
+	data []byte
+	done bool
+}
+
+func (r *partialErrorReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+	r.done = true
+	return copy(p, r.data), io.ErrUnexpectedEOF
+}
+
 func TestMiddleware_SuccessSamplingKeepsSlow(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.New(

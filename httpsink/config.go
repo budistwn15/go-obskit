@@ -1,3 +1,4 @@
+// Package httpsink ships slog records asynchronously to a generic HTTP endpoint.
 package httpsink
 
 import (
@@ -102,14 +103,43 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if cfg.Headers == nil {
 		cfg.Headers = map[string]string{}
+	} else {
+		cfg.Headers = cloneStringMap(cfg.Headers)
 	}
+	cfg.StaticFields = cloneAnyMap(cfg.StaticFields)
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: cfg.Timeout}
-	} else if cfg.HTTPClient.Timeout <= 0 {
-		cfg.HTTPClient.Timeout = cfg.Timeout
+	} else {
+		client := *cfg.HTTPClient
+		if client.Timeout <= 0 {
+			client.Timeout = cfg.Timeout
+		}
+		cfg.HTTPClient = &client
 	}
 	cfg.RecoverInternally = true
 	return cfg
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for k, v := range input {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneAnyMap(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for k, v := range input {
+		out[k] = v
+	}
+	return out
 }
 
 func (c Config) active() bool {

@@ -1,3 +1,6 @@
+// Package httpout provides legacy outbound HTTP logging.
+//
+// Deprecated: use github.com/budistwn15/go-obskit/outbound.
 package httpout
 
 import (
@@ -118,7 +121,7 @@ func normalizeConfig(cfg Config) runtimeConfig {
 	if cfg.ShouldLogDetail == nil {
 		cfg.ShouldLogDetail = func(*http.Request, *http.Response, error, time.Duration) bool { return false }
 	}
-	
+
 	return runtimeConfig{
 		logger:              cfg.Logger,
 		correlationHeader:   cfg.CorrelationHeader,

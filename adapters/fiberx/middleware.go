@@ -17,14 +17,15 @@ func Middleware(log *slog.Logger, opts Options) fiber.Handler {
 	}
 	opts = normalizeOptions(opts)
 	sampler := httplog.NewSuccessSampler(opts.SuccessSampleEvery)
-	
+
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
+		anyLifecycleLog := opts.LogRequestStart || opts.LogRequestComplete || opts.LogRequestError
 		ctx := c.UserContext()
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		
+
 		correlationID := c.Get(opts.CorrelationHeader)
 		if correlationID == "" {
 			ctx, correlationID = correlation.GetOrGenerate(ctx)
@@ -43,16 +44,20 @@ func Middleware(log *slog.Logger, opts Options) fiber.Handler {
 			},
 		)
 		c.SetUserContext(ctx)
-		
+
 		c.Request().Header.Set(opts.CorrelationHeader, correlationID)
 		c.Set(opts.CorrelationHeader, correlationID)
-		
-		reqMeta := captureRequestMeta(c, opts)
-		if body, truncated := captureRequestBody(c, opts); body != "" {
-			reqMeta.RequestBody = body
-			reqMeta.RequestBodyTruncated = truncated
+
+		var reqMeta httplog.RequestMeta
+		reqMetaReady := opts.LogRequestStart || (opts.CaptureRequestBody && anyLifecycleLog)
+		if reqMetaReady {
+			reqMeta = captureRequestMeta(c, opts)
+			if body, truncated := captureRequestBody(c, opts); body != "" {
+				reqMeta.RequestBody = body
+				reqMeta.RequestBodyTruncated = truncated
+			}
 		}
-		
+
 		if opts.LogRequestStart && shouldLog(
 			sampler, opts.ShouldLogStart, "start", reqMeta, httplog.ResponseMeta{}, httplog.EventMeta{}, nil,
 			opts.RecoverInternally,
@@ -67,10 +72,26 @@ func Middleware(log *slog.Logger, opts Options) fiber.Handler {
 			)
 			logEvent(log, ctx, ev, opts.RecoverInternally)
 		}
-		
+
 		err := c.Next()
-		
+		if !anyLifecycleLog {
+			return err
+		}
+
 		duration := httplog.Since(start)
+		statusCode := c.Response().StatusCode()
+		isSlow := httplog.IsSlowRequest(duration, opts.SlowRequestThreshold)
+		if err == nil && statusCode < 400 && opts.LogRequestComplete && opts.ShouldLogComplete == nil &&
+			!isSlow && !sampler.ShouldLog(httplog.DecisionMeta{
+			Event:     "complete",
+			Response:  httplog.ResponseMeta{StatusCode: statusCode},
+			EventMeta: httplog.EventMeta{Duration: duration, Slow: false},
+		}) {
+			return nil
+		}
+		if !reqMetaReady {
+			reqMeta = captureRequestMeta(c, opts)
+		}
 		resMeta := captureResponseMeta(c, opts)
 		evMeta := httplog.EventMeta{
 			CorrelationID: correlationID,
@@ -96,9 +117,9 @@ func Middleware(log *slog.Logger, opts Options) fiber.Handler {
 		if !opts.LogSuccessHeaders {
 			resMeta.Headers = nil
 		}
-		if opts.LogRequestComplete && shouldLog(
+		if opts.LogRequestComplete && (opts.ShouldLogComplete == nil || shouldLog(
 			sampler, opts.ShouldLogComplete, "complete", reqMeta, resMeta, evMeta, nil, opts.RecoverInternally,
-		) {
+		)) {
 			logEvent(log, ctx, httplog.BuildRequestComplete(reqMeta, resMeta, evMeta), opts.RecoverInternally)
 		}
 		return err

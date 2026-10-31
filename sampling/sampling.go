@@ -1,3 +1,4 @@
+// Package sampling provides deterministic sampling that preserves important events.
 package sampling
 
 import (

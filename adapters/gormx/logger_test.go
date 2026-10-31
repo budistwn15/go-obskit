@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,18 @@ func parseLines(t *testing.T, raw string) []map[string]any {
 		out = append(out, m)
 	}
 	return out
+}
+
+func TestFastSuccessDefaultSkipsSQLCallback(t *testing.T) {
+	gl := New(logger.New(logger.Config{Output: io.Discard}), DefaultOptions()).(gormlogger.Interface)
+	called := false
+	gl.Trace(context.Background(), time.Now(), func() (string, int64) {
+		called = true
+		return "SELECT * FROM users", 1
+	}, nil)
+	if called {
+		t.Fatal("fast success that cannot be logged must not evaluate SQL")
+	}
 }
 
 func TestSlowQueryDetection(t *testing.T) {
@@ -234,6 +247,29 @@ func TestLowNoiseDefaults(t *testing.T) {
 	)
 	if strings.TrimSpace(buf.String()) != "" {
 		t.Fatalf("default should not log successful fast query")
+	}
+}
+
+func TestDefaultOptions_DoNotExtractWhereValues(t *testing.T) {
+	if DefaultOptions().IncludeWhereDetails {
+		t.Fatal("default options must not extract SQL WHERE values")
+	}
+}
+
+func TestDefaultOptions_DoNotEmitWhereDetails(t *testing.T) {
+	var buf bytes.Buffer
+	log := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
+	gl := New(log, DefaultOptions()).(gormlogger.Interface)
+
+	gl.Trace(context.Background(), time.Now(), func() (string, int64) {
+		return "SELECT * FROM users WHERE email='john@example.com' AND name='John' AND address='Secret' AND token='abc'", 0
+	}, errors.New("db down"))
+
+	last := parseLines(t, buf.String())[0]
+	for _, field := range []string{FieldDBWhereColumns, FieldDBWhereValues, FieldDBWhereConditions} {
+		if _, ok := last[field]; ok {
+			t.Fatalf("default log contains %s", field)
+		}
 	}
 }
 

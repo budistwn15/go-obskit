@@ -1,3 +1,4 @@
+// Package ginx provides incoming HTTP logging middleware for Gin.
 package ginx
 
 import "github.com/budistwn15/go-obskit/httplog"

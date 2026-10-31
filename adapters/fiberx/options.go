@@ -1,3 +1,4 @@
+// Package fiberx provides incoming HTTP logging middleware for Fiber.
 package fiberx
 
 import "github.com/budistwn15/go-obskit/httplog"

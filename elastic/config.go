@@ -1,3 +1,4 @@
+// Package elastic ships slog records asynchronously to Elasticsearch or OpenSearch.
 package elastic
 
 import (
@@ -56,6 +57,9 @@ type Config struct {
 
 	// Optional static fields appended to all shipped documents.
 	StaticFields map[string]any
+	// ExpandJSONFields parses and flattens JSON-looking string fields.
+	// Default false because it adds allocations and dynamic fields.
+	ExpandJSONFields bool
 
 	// Optional client override.
 	HTTPClient *http.Client
@@ -192,14 +196,30 @@ func normalizeConfig(cfg Config) Config {
 	if strings.TrimSpace(cfg.TemplateName) == "" {
 		cfg.TemplateName = d.TemplateName
 	}
+	cfg.StaticFields = cloneAnyMap(cfg.StaticFields)
 	// Safety-first default.
 	cfg.RecoverInternally = true
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: cfg.Timeout}
-	} else if cfg.HTTPClient.Timeout <= 0 {
-		cfg.HTTPClient.Timeout = cfg.Timeout
+	} else {
+		client := *cfg.HTTPClient
+		if client.Timeout <= 0 {
+			client.Timeout = cfg.Timeout
+		}
+		cfg.HTTPClient = &client
 	}
 	return cfg
+}
+
+func cloneAnyMap(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for k, v := range input {
+		out[k] = v
+	}
+	return out
 }
 
 func (c Config) active() bool {

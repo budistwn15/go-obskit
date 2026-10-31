@@ -76,6 +76,15 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 		return
 	}
 	elapsed := time.Since(begin)
+	isError := err != nil && l.opts.Level >= gormlogger.Error
+	if isError && l.opts.IgnoreRecordNotFound && errors.Is(err, gorm.ErrRecordNotFound) {
+		return
+	}
+	isSlow := l.opts.SlowThreshold > 0 && elapsed > l.opts.SlowThreshold && l.opts.Level >= gormlogger.Warn
+	logSuccess := l.opts.LogSuccess && l.opts.Level >= gormlogger.Info
+	if !isError && !isSlow && !logSuccess {
+		return
+	}
 
 	statement, rows := fc()
 	rawStatement := statement
@@ -90,7 +99,14 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 	if ctxDB := DBSystem(ctx); ctxDB != "" {
 		dbSystem = ctxDB
 	}
-	whereCols, whereVals, whereConds := extractWhere(rawStatement, l.opts.MaxWhereConditions, l.opts.RedactWhereSensitiveValues)
+	var whereCols []string
+	var whereVals map[string]string
+	var whereConds []whereCondition
+	if l.opts.IncludeWhereDetails {
+		whereCols, whereVals, whereConds = extractWhere(
+			rawStatement, l.opts.MaxWhereConditions, l.opts.RedactWhereSensitiveValues,
+		)
+	}
 
 	attrs := []slog.Attr{
 		slog.String(FieldDBSystem, dbSystem),
@@ -130,10 +146,7 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 		Duration:  elapsed,
 	}
 
-	if err != nil && l.opts.Level >= gormlogger.Error {
-		if l.opts.IgnoreRecordNotFound && errors.Is(err, gorm.ErrRecordNotFound) {
-			return
-		}
+	if isError {
 		decision.EventType = "db.query.error"
 		decision.HasError = true
 		attrs = append(attrs, slog.String(FieldDBResultStatus, "error"))
@@ -172,7 +185,7 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 		return
 	}
 
-	if l.opts.SlowThreshold > 0 && elapsed > l.opts.SlowThreshold && l.opts.Level >= gormlogger.Warn {
+	if isSlow {
 		decision.EventType = "db.query.slow"
 		decision.Slow = true
 		attrs = append(attrs, slog.String(FieldDBResultStatus, "success"))
@@ -198,7 +211,7 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 		return
 	}
 
-	if l.opts.LogSuccess && l.opts.Level >= gormlogger.Info {
+	if logSuccess {
 		attrs = append(attrs, slog.String(FieldDBResultStatus, "success"))
 		if !l.opts.LogSQL && l.opts.LogSQLOnSuccess {
 			attrs = append(attrs, slog.String(FieldDBStatement, statement))

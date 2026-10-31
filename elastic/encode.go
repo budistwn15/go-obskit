@@ -12,6 +12,10 @@ const maxAutoJSONExpandBytes = 64 * 1024
 const maxAutoJSONFlattenFields = 256
 
 func recordToDocument(rec slog.Record, static map[string]any) map[string]any {
+	return recordToDocumentWithJSONExpansion(rec, static, false)
+}
+
+func recordToDocumentWithJSONExpansion(rec slog.Record, static map[string]any, expandJSON bool) map[string]any {
 	doc := make(map[string]any, 20)
 	doc["@timestamp"] = rec.Time.UTC().Format(time.RFC3339Nano)
 	doc["message"] = rec.Message
@@ -25,7 +29,7 @@ func recordToDocument(rec slog.Record, static map[string]any) map[string]any {
 		applyAttr(doc, a)
 		return true
 	})
-	enrichDocument(doc)
+	enrichDocument(doc, expandJSON)
 
 	return doc
 }
@@ -53,8 +57,10 @@ func applyAttr(m map[string]any, attr slog.Attr) {
 	m[attr.Key] = v.Any()
 }
 
-func enrichDocument(doc map[string]any) {
-	expandJSONStringFields(doc)
+func enrichDocument(doc map[string]any, expandJSON bool) {
+	if expandJSON {
+		expandJSONStringFields(doc)
+	}
 	if _, exists := doc["db.table"]; exists {
 		return
 	}

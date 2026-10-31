@@ -60,12 +60,17 @@ func captureRequestBody(c *gin.Context, opts Options) (string, bool) {
 	}
 	max := opts.MaxBodyBytes
 	buf, err := io.ReadAll(io.LimitReader(c.Request.Body, int64(max+1)))
+	c.Request.Body = &replayBody{Reader: io.MultiReader(bytes.NewReader(buf), c.Request.Body), Closer: c.Request.Body}
 	if err != nil {
 		return "", false
 	}
-	c.Request.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf), c.Request.Body))
 	cap := httplog.CaptureBody(contentType, buf, max, opts.BodyJSONDenylist)
 	return cap.Value, cap.Truncated
+}
+
+type replayBody struct {
+	io.Reader
+	io.Closer
 }
 
 func captureRequestMeta(c *gin.Context, opts Options) httplog.RequestMeta {

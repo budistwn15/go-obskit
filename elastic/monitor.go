@@ -37,11 +37,11 @@ func (m *Middleware) HealthCheck(ctx context.Context) ConnectionStatus {
 }
 
 func (m *Middleware) runMonitor() {
-	defer m.wg.Done()
+	defer m.workerDone()
 	ticker := time.NewTicker(m.cfg.MonitorInterval)
 	defer ticker.Stop()
 
-	ctx, cancel := context.WithTimeout(context.Background(), m.cfg.Timeout)
+	ctx, cancel := context.WithTimeout(m.ctx, m.cfg.Timeout)
 	st := m.checkConnection(ctx)
 	cancel()
 	m.updateMonitor(st)
@@ -51,7 +51,7 @@ func (m *Middleware) runMonitor() {
 		case <-m.stop:
 			return
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), m.cfg.Timeout)
+			ctx, cancel := context.WithTimeout(m.ctx, m.cfg.Timeout)
 			st := m.checkConnection(ctx)
 			cancel()
 			m.updateMonitor(st)

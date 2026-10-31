@@ -3,11 +3,13 @@ package httpsink
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -64,4 +66,108 @@ func TestSendNDJSON(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("sink payload not received, got=%q", got)
+}
+
+func TestCloseCancelsRetryAndDropsFurtherRecords(t *testing.T) {
+	requestStarted := make(chan struct{}, 1)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case requestStarted <- struct{}{}:
+		default:
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer ts.Close()
+
+	mw := NewMiddleware(Config{
+		Enabled:               true,
+		Endpoint:              ts.URL,
+		BatchSize:             1,
+		MaxRetries:            3,
+		RetryBackoff:          10 * time.Second,
+		MaxBackoff:            10 * time.Second,
+		ConnectionLogToStdout: false,
+	})
+	mw.enqueue(slog.NewRecord(time.Now(), slog.LevelInfo, "before close", 0))
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("request did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := mw.Close(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("close: %v", err)
+	}
+	<-mw.done
+	before := mw.Stats()
+	mw.enqueue(slog.NewRecord(time.Now(), slog.LevelInfo, "after close", 0))
+	after := mw.Stats()
+	if after.Enqueued != before.Enqueued || after.Dropped != before.Dropped+1 {
+		t.Fatalf("post-close record must be dropped, before=%+v after=%+v", before, after)
+	}
+	if after.Failed != 1 || after.Retried == 0 {
+		t.Fatalf("failed records and retry attempts must be exact, stats=%+v", after)
+	}
+}
+
+func TestCloseCancelsInFlightRequest(t *testing.T) {
+	requestStarted := make(chan struct{})
+	var calls atomic.Int32
+	client := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if calls.Add(1) == 1 {
+			close(requestStarted)
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+	})}
+
+	mw := NewMiddleware(Config{
+		Enabled:               true,
+		Endpoint:              "http://example.invalid",
+		BatchSize:             1,
+		Timeout:               time.Minute,
+		HTTPClient:            client,
+		ConnectionLogToStdout: false,
+	})
+	mw.enqueue(slog.NewRecord(time.Now(), slog.LevelInfo, "in flight", 0))
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("request did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := mw.Close(ctx); err != nil {
+		t.Fatalf("close did not cancel request: %v", err)
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestConfigOwnership(t *testing.T) {
+	client := &http.Client{}
+	headers := map[string]string{"X-Owner": "caller"}
+	fields := map[string]any{"owner": "caller"}
+	mw := NewMiddleware(Config{
+		Enabled:      true,
+		Endpoint:     "http://example.invalid",
+		HTTPClient:   client,
+		Headers:      headers,
+		StaticFields: fields,
+	})
+	headers["X-Owner"] = "mutated"
+	fields["owner"] = "mutated"
+	if client.Timeout != 0 {
+		t.Fatalf("caller client mutated: timeout=%v", client.Timeout)
+	}
+	if mw.cfg.Headers["X-Owner"] != "caller" || mw.cfg.StaticFields["owner"] != "caller" {
+		t.Fatalf("config maps were not copied: headers=%v fields=%v", mw.cfg.Headers, mw.cfg.StaticFields)
+	}
+	if err := mw.Close(context.Background()); err != nil {
+		t.Fatalf("close: %v", err)
+	}
 }

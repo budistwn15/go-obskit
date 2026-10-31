@@ -3,7 +3,6 @@ package elastic
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -24,10 +23,17 @@ type Middleware struct {
 	cfg       Config
 	statusLog *slog.Logger
 
-	queue chan slog.Record
-	stop  chan struct{}
-	wg    sync.WaitGroup
-	once  sync.Once
+	queue        chan slog.Record
+	stop         chan struct{}
+	enqueuesDone chan struct{}
+	done         chan struct{}
+	once         sync.Once
+	enqueueMu    sync.RWMutex
+	closed       atomic.Bool
+	ctx          context.Context
+	cancel       context.CancelFunc
+	closeCtx     context.Context
+	workers      atomic.Int32
 
 	monitorMu sync.RWMutex
 	monitor   ConnectionStatus
@@ -56,6 +62,17 @@ func NewMiddleware(cfg Config) *Middleware {
 	}
 	m.queue = make(chan slog.Record, cfg.QueueSize)
 	m.stop = make(chan struct{})
+	m.enqueuesDone = make(chan struct{})
+	m.done = make(chan struct{})
+	m.ctx, m.cancel = context.WithCancel(context.Background())
+	workerCount := int32(1)
+	if cfg.Bootstrap && cfg.BootstrapOnStart {
+		workerCount++
+	}
+	if cfg.EnableMonitor {
+		workerCount++
+	}
+	m.workers.Store(workerCount)
 	m.emitStatus(
 		slog.LevelInfo, "elastic sink enabled",
 		slog.String("elastic.endpoint", cfg.Endpoint),
@@ -65,7 +82,8 @@ func NewMiddleware(cfg Config) *Middleware {
 	)
 	if cfg.Bootstrap && cfg.BootstrapOnStart {
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+			defer m.workerDone()
+			ctx, cancel := context.WithTimeout(m.ctx, cfg.Timeout)
 			defer cancel()
 			if err := m.Bootstrap(ctx); err != nil {
 				m.emitStatus(slog.LevelWarn, "elastic bootstrap failed", slog.String("error.message", err.Error()))
@@ -80,10 +98,8 @@ func NewMiddleware(cfg Config) *Middleware {
 			)
 		}()
 	}
-	m.wg.Add(1)
 	go m.run()
 	if cfg.EnableMonitor {
-		m.wg.Add(1)
 		go m.runMonitor()
 	}
 	return m
@@ -107,18 +123,27 @@ func (m *Middleware) Close(ctx context.Context) error {
 	if m == nil || !m.cfg.active() {
 		return nil
 	}
-	m.once.Do(func() { close(m.stop) })
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		m.wg.Wait()
-	}()
+	m.once.Do(func() {
+		m.closeCtx = ctx
+		m.closed.Store(true)
+		m.cancel()
+		close(m.stop)
+		m.enqueueMu.Lock()
+		close(m.enqueuesDone)
+		m.enqueueMu.Unlock()
+	})
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
+	case <-m.done:
 		m.emitStatus(slog.LevelInfo, "elastic sink closed")
 		return nil
+	}
+}
+
+func (m *Middleware) workerDone() {
+	if m.workers.Add(-1) == 0 {
+		close(m.done)
 	}
 }
 
@@ -137,6 +162,12 @@ func (m *Middleware) Stats() Stats {
 
 func (m *Middleware) enqueue(rec slog.Record) {
 	if m == nil || !m.cfg.active() {
+		return
+	}
+	m.enqueueMu.RLock()
+	defer m.enqueueMu.RUnlock()
+	if m.closed.Load() {
+		m.dropped.Add(1)
 		return
 	}
 	r := rec.Clone()
@@ -161,7 +192,6 @@ func (m *Middleware) handleErr(err error) {
 	if err == nil {
 		return
 	}
-	m.failed.Add(1)
 	m.emitStatus(
 		slog.LevelWarn, "elastic sink error",
 		slog.String("error.message", err.Error()),
@@ -178,7 +208,6 @@ func (m *Middleware) retryErr(attempt int, err error) {
 		slog.Int("retry.attempt", attempt),
 		slog.String("error.message", err.Error()),
 	)
-	m.handleErr(fmt.Errorf("elastic retry %d: %w", attempt, err))
 }
 
 func joinErr(base error, next error) error {

@@ -1,3 +1,4 @@
+// Package sinkenv selects and configures an optional logging sink from environment values.
 package sinkenv
 
 import (

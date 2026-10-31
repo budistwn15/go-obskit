@@ -55,18 +55,30 @@ func BenchmarkLoggerWithCommon(b *testing.B) {
 	}
 }
 
-func BenchmarkLoggerInfoContextAttrs(b *testing.B) {
+func BenchmarkLoggerInfoTwoContextAttrs(b *testing.B) {
+	benchmarkLoggerInfoContextAttrs(b, 2)
+}
+
+func BenchmarkLoggerInfoOneContextAttr(b *testing.B) {
+	benchmarkLoggerInfoContextAttrs(b, 1)
+}
+
+func BenchmarkLoggerInfoTenContextAttrs(b *testing.B) {
+	benchmarkLoggerInfoContextAttrs(b, 10)
+}
+
+func benchmarkLoggerInfoContextAttrs(b *testing.B, count int) {
 	l := New(Config{
 		ServiceName: "bench",
 		Environment: "production",
 		Level:       LevelInfo,
 		Output:      io.Discard,
 	})
-	ctx := WithContextAttrs(
-		context.Background(),
-		slog.String("tenant_id", "t-1"),
-		slog.String("region", "ap-southeast-1"),
-	)
+	attrs := make([]slog.Attr, count)
+	for i := range attrs {
+		attrs[i] = slog.Int("context_attr", i)
+	}
+	ctx := WithContextAttrs(context.Background(), attrs...)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

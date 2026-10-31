@@ -1,3 +1,4 @@
+// Package nethttp provides the preferred incoming net/http logging middleware.
 package nethttp
 
 import (

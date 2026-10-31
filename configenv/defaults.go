@@ -1,3 +1,4 @@
+// Package configenv generates and updates example environment configuration.
 package configenv
 
 type Entry struct {

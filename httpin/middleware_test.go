@@ -58,7 +58,7 @@ func TestCorrelationPropagationFromIncomingHeader(t *testing.T) {
 			Logger: newTestSlog(&buf, logger.LevelInfo),
 		},
 	)
-	
+
 	handler := mw.Wrap(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -69,13 +69,13 @@ func TestCorrelationPropagationFromIncomingHeader(t *testing.T) {
 			},
 		),
 	)
-	
+
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	req.Header.Set("X-Correlation-ID", "corr-abc")
 	rr := httptest.NewRecorder()
-	
+
 	handler.ServeHTTP(rr, req)
-	
+
 	if got := rr.Header().Get("X-Correlation-ID"); got != "corr-abc" {
 		t.Fatalf("expected response correlation header corr-abc, got=%s", got)
 	}
@@ -91,7 +91,7 @@ func TestCorrelationGeneratedWhenMissing(t *testing.T) {
 			},
 		},
 	)
-	
+
 	handler := mw.Wrap(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -102,11 +102,11 @@ func TestCorrelationGeneratedWhenMissing(t *testing.T) {
 			},
 		),
 	)
-	
+
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
-	
+
 	if got := rr.Header().Get("X-Correlation-ID"); got != "generated-corr-id" {
 		t.Fatalf("expected generated correlation id in response header, got=%s", got)
 	}
@@ -120,7 +120,7 @@ func TestDurationAndResponseCapture(t *testing.T) {
 			LogResponseHeaders: true,
 		},
 	)
-	
+
 	handler := mw.Wrap(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -131,12 +131,12 @@ func TestDurationAndResponseCapture(t *testing.T) {
 			},
 		),
 	)
-	
+
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/orders?status=1", nil)
 	req.Header.Set("User-Agent", "test-agent")
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
-	
+
 	logs := parseLogLines(t, buf.String())
 	summary := findByMsg(logs, "incoming http request")
 	if summary == nil {
@@ -166,7 +166,7 @@ func TestResponseBodyTruncation(t *testing.T) {
 			},
 		},
 	)
-	
+
 	handler := mw.Wrap(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -175,11 +175,11 @@ func TestResponseBodyTruncation(t *testing.T) {
 			},
 		),
 	)
-	
+
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
 	handler.ServeHTTP(rr, req)
-	
+
 	logs := parseLogLines(t, buf.String())
 	bodyLog := findByMsg(logs, "incoming response body")
 	if bodyLog == nil {
@@ -202,7 +202,7 @@ func TestRequestBodyRedaction(t *testing.T) {
 			},
 		},
 	)
-	
+
 	handler := mw.Wrap(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -217,12 +217,12 @@ func TestRequestBodyRedaction(t *testing.T) {
 			},
 		),
 	)
-	
+
 	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"username":"john","password":"secret"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
-	
+
 	logs := parseLogLines(t, buf.String())
 	bodyLog := findByMsg(logs, "incoming request body")
 	if bodyLog == nil {
@@ -237,6 +237,72 @@ func TestRequestBodyRedaction(t *testing.T) {
 	}
 }
 
+func TestRequestBodyCapturePreservesDataReturnedWithError(t *testing.T) {
+	mw := New(Config{CaptureRequestBody: true})
+	received := ""
+	h := mw.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received = string(body)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = io.NopCloser(&partialErrorReader{data: []byte(`{"name":"john"}`)})
+
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if received != `{"name":"john"}` {
+		t.Fatalf("downstream body = %q, want complete original body", received)
+	}
+}
+
+func TestRequestBodyRedactionFailureDoesNotLogOriginalContent(t *testing.T) {
+	var buf bytes.Buffer
+	mw := New(Config{
+		Logger:             newTestSlog(&buf, logger.LevelDebug),
+		CaptureRequestBody: true,
+		LogRequestBody:     true,
+		ShouldLogDetail:    func(*http.Request, int, time.Duration) bool { return true },
+	})
+	h := mw.Wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"password":"secret-value"`))
+	req.Header.Set("Content-Type", "application/json")
+
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if strings.Contains(buf.String(), "secret-value") {
+		t.Fatalf("redaction failure leaked original secret: %s", buf.String())
+	}
+}
+
+func TestResponseCaptureRecordsFirstStatus(t *testing.T) {
+	var buf bytes.Buffer
+	mw := New(Config{Logger: newTestSlog(&buf, logger.LevelInfo)})
+	h := mw.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+
+	summary := findByMsg(parseLogLines(t, buf.String()), "incoming http request")
+	if got := int(summary["http_status_code"].(float64)); got != http.StatusCreated {
+		t.Fatalf("logged status = %d, want first status %d", got, http.StatusCreated)
+	}
+}
+
+type partialErrorReader struct {
+	data []byte
+	done bool
+}
+
+func (r *partialErrorReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+	r.done = true
+	return copy(p, r.data), io.ErrUnexpectedEOF
+}
+
 func TestGracefulDegradationWhenDetailHookPanics(t *testing.T) {
 	var buf bytes.Buffer
 	mw := New(
@@ -247,7 +313,7 @@ func TestGracefulDegradationWhenDetailHookPanics(t *testing.T) {
 			},
 		},
 	)
-	
+
 	handler := mw.Wrap(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -255,15 +321,15 @@ func TestGracefulDegradationWhenDetailHookPanics(t *testing.T) {
 			},
 		),
 	)
-	
+
 	req := httptest.NewRequest(http.MethodGet, "/panic-safe", nil)
 	rr := httptest.NewRecorder()
-	
+
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("request flow must not break, got status=%d", rr.Code)
 	}
-	
+
 	logs := parseLogLines(t, buf.String())
 	if findByMsg(logs, "incoming http request") == nil {
 		t.Fatalf("summary log should still be produced")

@@ -1,3 +1,4 @@
+// Package gormx provides structured, low-overhead logging for GORM.
 package gormx
 
 import (
@@ -55,7 +56,7 @@ func DefaultOptions() Options {
 		LogSQLOnSuccess:            false,
 		LogRowsAffected:            true,
 		LogSQLArgs:                 false,
-		IncludeWhereDetails:        true,
+		IncludeWhereDetails:        false,
 		MaxWhereConditions:         16,
 		RedactWhereSensitiveValues: true,
 		SuccessSampleEvery:         1,

@@ -17,10 +17,11 @@ func Middleware(log *slog.Logger, opts Options) gin.HandlerFunc {
 	}
 	opts = normalizeOptions(opts)
 	sampler := httplog.NewSuccessSampler(opts.SuccessSampleEvery)
-	
+
 	return func(c *gin.Context) {
 		start := time.Now()
-		
+		anyLifecycleLog := opts.LogRequestStart || opts.LogRequestComplete || opts.LogRequestError
+
 		ctx := c.Request.Context()
 		correlationID := c.GetHeader(opts.CorrelationHeader)
 		if correlationID == "" {
@@ -31,7 +32,7 @@ func Middleware(log *slog.Logger, opts Options) gin.HandlerFunc {
 		requestID := c.GetHeader("X-Request-ID")
 		traceID := c.GetHeader("X-Trace-ID")
 		spanID := c.GetHeader("X-Span-ID")
-		
+
 		ctx = logger.WithMeta(
 			ctx, logger.ContextMeta{
 				CorrelationID: correlationID,
@@ -43,13 +44,17 @@ func Middleware(log *slog.Logger, opts Options) gin.HandlerFunc {
 		c.Request = c.Request.WithContext(ctx)
 		c.Request.Header.Set(opts.CorrelationHeader, correlationID)
 		c.Writer.Header().Set(opts.CorrelationHeader, correlationID)
-		
-		reqMeta := captureRequestMeta(c, opts)
-		if body, truncated := captureRequestBody(c, opts); body != "" {
-			reqMeta.RequestBody = body
-			reqMeta.RequestBodyTruncated = truncated
+
+		var reqMeta httplog.RequestMeta
+		reqMetaReady := opts.LogRequestStart || (opts.CaptureRequestBody && anyLifecycleLog)
+		if reqMetaReady {
+			reqMeta = captureRequestMeta(c, opts)
+			if body, truncated := captureRequestBody(c, opts); body != "" {
+				reqMeta.RequestBody = body
+				reqMeta.RequestBodyTruncated = truncated
+			}
 		}
-		
+
 		if opts.LogRequestStart && shouldLog(
 			sampler, opts.ShouldLogStart, "start", reqMeta, httplog.ResponseMeta{}, httplog.EventMeta{}, nil,
 			opts.RecoverInternally,
@@ -64,12 +69,28 @@ func Middleware(log *slog.Logger, opts Options) gin.HandlerFunc {
 			)
 			logEvent(log, c.Request.Context(), event, opts.RecoverInternally)
 		}
-		
-		rw := newResponseWriter(c.Writer, opts.CaptureResponseBody, opts.MaxBodyBytes)
+
+		rw := newResponseWriter(c.Writer, anyLifecycleLog && opts.CaptureResponseBody, opts.MaxBodyBytes)
 		c.Writer = rw
 		c.Next()
-		
+		if !anyLifecycleLog {
+			return
+		}
+
 		duration := httplog.Since(start)
+		statusCode := rw.Status()
+		isSlow := httplog.IsSlowRequest(duration, opts.SlowRequestThreshold)
+		if len(c.Errors) == 0 && statusCode < 400 && opts.LogRequestComplete && opts.ShouldLogComplete == nil &&
+			!isSlow && !sampler.ShouldLog(httplog.DecisionMeta{
+			Event:     "complete",
+			Response:  httplog.ResponseMeta{StatusCode: statusCode},
+			EventMeta: httplog.EventMeta{Duration: duration, Slow: false},
+		}) {
+			return
+		}
+		if !reqMetaReady {
+			reqMeta = captureRequestMeta(c, opts)
+		}
 		resMeta := captureResponseMeta(c, rw, opts)
 		evMeta := httplog.EventMeta{
 			CorrelationID: correlationID,
@@ -80,7 +101,7 @@ func Middleware(log *slog.Logger, opts Options) gin.HandlerFunc {
 			DurationMS:    httplog.DurationMS(duration),
 			Slow:          httplog.IsSlowRequest(duration, opts.SlowRequestThreshold),
 		}
-		
+
 		if len(c.Errors) > 0 || resMeta.StatusCode >= 500 {
 			evMeta.ErrorKind = "http_error"
 			if len(c.Errors) > 0 {
@@ -96,13 +117,13 @@ func Middleware(log *slog.Logger, opts Options) gin.HandlerFunc {
 				return
 			}
 		}
-		
+
 		if !opts.LogSuccessHeaders && resMeta.StatusCode < 400 {
 			resMeta.Headers = nil
 		}
-		if opts.LogRequestComplete && shouldLog(
+		if opts.LogRequestComplete && (opts.ShouldLogComplete == nil || shouldLog(
 			sampler, opts.ShouldLogComplete, "complete", reqMeta, resMeta, evMeta, nil, opts.RecoverInternally,
-		) {
+		)) {
 			logEvent(
 				log, c.Request.Context(), httplog.BuildRequestComplete(reqMeta, resMeta, evMeta), opts.RecoverInternally,
 			)

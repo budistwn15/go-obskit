@@ -33,20 +33,21 @@ func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 	if req == nil {
 		return t.base.RoundTrip(req)
 	}
-	
+
 	rc := t.cfg.Load()
 	if rc == nil {
 		return t.base.RoundTrip(req)
 	}
-	
+
 	start := time.Now()
 	ctx := req.Context()
-	
+	req = req.Clone(ctx)
+
 	correlationID := logger.CorrelationID(ctx)
 	if correlationID != "" {
 		req.Header.Set(rc.correlationHeader, correlationID)
 	}
-	
+
 	traceID, spanID := extractTraceSpanID(req)
 	meta := logger.ContextMeta{
 		CorrelationID: correlationID,
@@ -59,7 +60,7 @@ func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 	}
 	ctx = logger.WithMeta(ctx, meta)
 	req = req.WithContext(ctx)
-	
+
 	reqCT := req.Header.Get("Content-Type")
 	reqBody := bodyCapture{}
 	reqBodyErr := ""
@@ -69,23 +70,23 @@ func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 			reqBodyErr = err.Error()
 		}
 	}
-	
+
 	resp, err = t.base.RoundTrip(req)
 	duration := time.Since(start)
 	meta.DurationMS = duration.Milliseconds()
 	ctx = logger.WithMeta(ctx, meta)
-	
+
 	if !safeShouldLog(rc.shouldLog, req, resp, err, duration) {
 		return resp, err
 	}
-	
+
 	target := req.URL.Host
 	if rc.targetResolver != nil {
 		if v := rc.targetResolver(req); v != "" {
 			target = v
 		}
 	}
-	
+
 	statusCode := 0
 	respSize := int64(0)
 	respHeaders := map[string]any{}
@@ -96,7 +97,7 @@ func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 			respHeaders = filterHeaders(resp.Header, rc.responseHeaders, rc.redactor)
 		}
 	}
-	
+
 	summaryAttrs := []slog.Attr{
 		slog.String("event_kind", "http_out"),
 		slog.String("target_service", target),
@@ -123,11 +124,11 @@ func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 		summaryAttrs = append(summaryAttrs, slog.Any("http_response_headers", respHeaders))
 	}
 	safeLog(rc.logger, ctx, slog.LevelInfo, "outbound http request", summaryAttrs...)
-	
+
 	if !safeShouldLog(rc.shouldLogDetail, req, resp, err, duration) {
 		return resp, err
 	}
-	
+
 	if rc.logRequestBody && rc.captureRequestBody && shouldCaptureBody(reqCT) {
 		body := reqBody.body
 		if reqBodyErr == "" && rc.redactJSONBody && isJSONContentType(reqCT) {
@@ -136,6 +137,7 @@ func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 				body = redactedBody
 			} else {
 				reqBodyErr = rerr.Error()
+				body = logger.DefaultMask
 			}
 		}
 		attrs := []slog.Attr{
@@ -148,7 +150,7 @@ func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 		}
 		safeLog(rc.logger, ctx, slog.LevelDebug, "outbound request body", attrs...)
 	}
-	
+
 	if rc.logResponseBody && rc.captureResponseBody && resp != nil {
 		respCT := resp.Header.Get("Content-Type")
 		if shouldCaptureBody(respCT) {
@@ -164,6 +166,7 @@ func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 					body = redactedBody
 				} else {
 					respBodyErr = redErr.Error()
+					body = logger.DefaultMask
 				}
 			}
 			attrs := []slog.Attr{
@@ -177,7 +180,7 @@ func (t *Transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 			safeLog(rc.logger, ctx, slog.LevelDebug, "outbound response body", attrs...)
 		}
 	}
-	
+
 	return resp, err
 }
 
@@ -189,8 +192,9 @@ func WrapClient(client *http.Client, cfg Config) *http.Client {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	client.Transport = New(base, cfg)
-	return client
+	wrapped := *client
+	wrapped.Transport = New(base, cfg)
+	return &wrapped
 }
 
 func extractTraceSpanID(r *http.Request) (string, string) {

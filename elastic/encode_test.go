@@ -13,7 +13,7 @@ func TestRecordToDocument_ParsesBodyJSON(t *testing.T) {
 		slog.String("http.request.body", `{"email":"a@b.c","password":"***redacted***"}`),
 		slog.String("http.response.body", `{"ok":true,"token":"***redacted***"}`),
 	)
-	doc := recordToDocument(rec, nil)
+	doc := recordToDocumentWithJSONExpansion(rec, nil, true)
 
 	if _, ok := doc["http.request.body_json"]; !ok {
 		t.Fatalf("expected http.request.body_json")
@@ -44,7 +44,7 @@ func TestRecordToDocument_ParsesGenericJSONStringFields(t *testing.T) {
 		slog.String("custom.payload", `{"tenant_id":"t-1","batch_id":"b-1"}`),
 		slog.String("custom.invalid", `{"tenant_id"`),
 	)
-	doc := recordToDocument(rec, nil)
+	doc := recordToDocumentWithJSONExpansion(rec, nil, true)
 
 	if _, ok := doc["custom.payload_json"]; !ok {
 		t.Fatalf("expected custom.payload_json")
@@ -69,7 +69,7 @@ func TestRecordToDocument_DoesNotOverrideExistingJSONField(t *testing.T) {
 		slog.String("custom.payload", `{"x":1}`),
 		slog.String("custom.payload_json", `{"already":"present"}`),
 	)
-	doc := recordToDocument(rec, nil)
+	doc := recordToDocumentWithJSONExpansion(rec, nil, true)
 	if doc["custom.payload_json"] != `{"already":"present"}` {
 		t.Fatalf("existing *_json field should not be overwritten")
 	}
@@ -80,7 +80,7 @@ func TestRecordToDocument_SkipsVeryLargeJSONExpand(t *testing.T) {
 	rec := slog.NewRecord(time.Unix(0, 0), slog.LevelInfo, "evt", 0)
 	rec.AddAttrs(slog.String("huge.body", largeJSON))
 
-	doc := recordToDocument(rec, nil)
+	doc := recordToDocumentWithJSONExpansion(rec, nil, true)
 	if _, ok := doc["huge.body_json"]; ok {
 		t.Fatalf("very large json should be skipped from auto expansion")
 	}
@@ -89,7 +89,7 @@ func TestRecordToDocument_SkipsVeryLargeJSONExpand(t *testing.T) {
 func TestRecordToDocument_FlattensNestedObjects(t *testing.T) {
 	rec := slog.NewRecord(time.Unix(0, 0), slog.LevelInfo, "evt", 0)
 	rec.AddAttrs(slog.String("http.response.body", `{"status":"ok","data":{"email":"a@b.c","name":"Budi"}}`))
-	doc := recordToDocument(rec, nil)
+	doc := recordToDocumentWithJSONExpansion(rec, nil, true)
 
 	if doc["http.response.body.status"] != "ok" {
 		t.Fatalf("expected flattened status")
@@ -99,5 +99,14 @@ func TestRecordToDocument_FlattensNestedObjects(t *testing.T) {
 	}
 	if doc["http.response.body.data.name"] != "Budi" {
 		t.Fatalf("expected flattened nested name")
+	}
+}
+
+func TestRecordToDocument_DoesNotExpandJSONByDefault(t *testing.T) {
+	rec := slog.NewRecord(time.Unix(0, 0), slog.LevelInfo, "evt", 0)
+	rec.AddAttrs(slog.String("payload", `{"token":"redacted"}`))
+	doc := recordToDocument(rec, nil)
+	if _, ok := doc["payload_json"]; ok {
+		t.Fatal("JSON expansion must remain opt-in")
 	}
 }

@@ -30,7 +30,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 	if next == nil {
 		next = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	}
-	
+
 	return http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			rc := m.cfg.Load()
@@ -39,7 +39,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 				return
 			}
 			start := time.Now()
-			
+
 			correlationID := r.Header.Get(rc.correlationHeader)
 			if correlationID == "" {
 				correlationID = rc.correlationIDFactory()
@@ -47,7 +47,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			if correlationID != "" {
 				w.Header().Set(rc.correlationHeader, correlationID)
 			}
-			
+
 			traceID, spanID := extractTraceSpanID(r)
 			meta := logger.ContextMeta{
 				CorrelationID: correlationID,
@@ -60,7 +60,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			}
 			ctx := logger.WithMeta(r.Context(), meta)
 			r = r.WithContext(ctx)
-			
+
 			reqCapture := bodyCapture{}
 			reqCaptureErr := ""
 			reqCT := r.Header.Get("Content-Type")
@@ -71,18 +71,18 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 					reqCaptureErr = err.Error()
 				}
 			}
-			
+
 			rw := newResponseCaptureWriter(w, rc.captureResponseBody, rc.maxBodyCaptureBytes)
 			next.ServeHTTP(rw, r)
-			
+
 			duration := time.Since(start)
 			meta.DurationMS = duration.Milliseconds()
 			ctx = logger.WithMeta(ctx, meta)
-			
+
 			if !safeShouldLog(rc.shouldLog, r, rw.status, duration) {
 				return
 			}
-			
+
 			summaryAttrs := []slog.Attr{
 				slog.String("event_kind", "http_in"),
 				slog.String("http_method", r.Method),
@@ -101,7 +101,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 				slog.Int64(logger.FieldDurationMS, duration.Milliseconds()),
 				slog.Int64("response_size_bytes", rw.sizeBytes),
 			}
-			
+
 			if rc.logRequestHeaders {
 				summaryAttrs = append(
 					summaryAttrs,
@@ -114,13 +114,13 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 					slog.Any("http_response_headers", filterHeaders(rw.Header(), rc.responseHeaders, rc.redactor)),
 				)
 			}
-			
+
 			safeLog(rc.logger, ctx, slog.LevelInfo, "incoming http request", summaryAttrs...)
-			
+
 			if !safeShouldLog(rc.shouldLogDetail, r, rw.status, duration) {
 				return
 			}
-			
+
 			if rc.logRequestBody && rc.captureRequestBody && shouldCaptureBody(reqCT) {
 				reqBody := reqCapture.body
 				if reqCaptureErr == "" && rc.redactJSONBody && isJSONContentType(reqCT) {
@@ -129,6 +129,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 						reqBody = redactedBody
 					} else {
 						reqCaptureErr = err.Error()
+						reqBody = logger.DefaultMask
 					}
 				}
 				detailAttrs := []slog.Attr{
@@ -141,7 +142,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 				}
 				safeLog(rc.logger, ctx, slog.LevelDebug, "incoming request body", detailAttrs...)
 			}
-			
+
 			if rc.logResponseBody && rc.captureResponseBody {
 				respCT := rw.Header().Get("Content-Type")
 				if shouldCaptureBody(respCT) {
@@ -153,6 +154,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 							respBody = redactedBody
 						} else {
 							respCaptureErr = err.Error()
+							respBody = logger.DefaultMask
 						}
 					}
 					detailAttrs := []slog.Attr{

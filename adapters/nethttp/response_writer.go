@@ -16,6 +16,7 @@ type responseWriter struct {
 	maxBodyBytes  int
 	body          bytes.Buffer
 	bodyTruncated bool
+	wroteHeader   bool
 }
 
 func newResponseWriter(w http.ResponseWriter, captureBody bool, maxBodyBytes int) *responseWriter {
@@ -28,11 +29,18 @@ func newResponseWriter(w http.ResponseWriter, captureBody bool, maxBodyBytes int
 }
 
 func (w *responseWriter) WriteHeader(statusCode int) {
+	if w.wroteHeader {
+		return
+	}
+	w.wroteHeader = true
 	w.status = statusCode
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
 func (w *responseWriter) Write(p []byte) (int, error) {
+	if !w.wroteHeader {
+		w.wroteHeader = true
+	}
 	if w.captureBody {
 		w.capture(p)
 	}
@@ -44,6 +52,8 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 func (w *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 	return io.Copy(w, r)
 }
+
+func (w *responseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *responseWriter) capture(p []byte) {
 	if w.maxBodyBytes <= 0 || w.bodyTruncated {

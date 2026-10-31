@@ -55,12 +55,16 @@ func Middleware(log *slog.Logger, opts Options) func(http.Handler) http.Handler 
 					return
 				}
 
-				requestMeta := requestMetaFromRequest(req, opts)
 				shouldCaptureReqBody := opts.CaptureRequestBody && anyLifecycleLog
-				bodyCapture := captureRequestBody(req, opts, shouldCaptureReqBody)
-				if bodyCapture.value != "" {
-					requestMeta.RequestBody = bodyCapture.value
-					requestMeta.RequestBodyTruncated = bodyCapture.truncated
+				var requestMeta httplog.RequestMeta
+				requestMetaReady := opts.LogRequestStart || shouldCaptureReqBody
+				if requestMetaReady {
+					requestMeta = requestMetaFromRequest(req, opts)
+					bodyCapture := captureRequestBody(req, opts, shouldCaptureReqBody)
+					if bodyCapture.value != "" {
+						requestMeta.RequestBody = bodyCapture.value
+						requestMeta.RequestBodyTruncated = bodyCapture.truncated
+					}
 				}
 
 				if opts.LogRequestStart && shouldLog(
@@ -73,11 +77,24 @@ func Middleware(log *slog.Logger, opts Options) func(http.Handler) http.Handler 
 					logEvent(log, ctx, event, opts.RecoverInternally)
 				}
 
-				captureRespBody := opts.CaptureResponseBody && (opts.LogErrorBodies || opts.LogSuccessBodies)
+				captureRespBody := anyLifecycleLog && opts.CaptureResponseBody &&
+					(opts.LogErrorBodies || opts.LogSuccessBodies)
 				rw := newResponseWriter(w, captureRespBody, opts.MaxBodyBytes)
 				next.ServeHTTP(rw, req)
 
 				duration := httplog.Since(start)
+				isSlow := httplog.IsSlowRequest(duration, opts.SlowRequestThreshold)
+				if rw.status < 400 && opts.LogRequestComplete && opts.ShouldLogComplete == nil && !isSlow &&
+					!sampler.ShouldLog(httplog.DecisionMeta{
+						Event:     "complete",
+						Response:  httplog.ResponseMeta{StatusCode: rw.status},
+						EventMeta: httplog.EventMeta{Duration: duration, Slow: false},
+					}) {
+					return
+				}
+				if !requestMetaReady {
+					requestMeta = requestMetaFromRequest(req, opts)
+				}
 				responseMeta := responseMetaFromWriter(rw, opts)
 				shouldLogRespBody := (rw.status >= 400 && opts.LogErrorBodies) || (rw.status < 400 && opts.LogSuccessBodies)
 				if captureRespBody && shouldLogRespBody && rw.body.Len() > 0 {
@@ -110,10 +127,10 @@ func Middleware(log *slog.Logger, opts Options) func(http.Handler) http.Handler 
 					logEvent(log, ctx, event, opts.RecoverInternally)
 					return
 				}
-				if opts.LogRequestComplete && shouldLog(
+				if opts.LogRequestComplete && (opts.ShouldLogComplete == nil || shouldLog(
 					sampler, opts.ShouldLogComplete, "complete", requestMeta, responseMeta, evMeta, nil,
 					opts.RecoverInternally,
-				) {
+				)) {
 					event := httplog.BuildRequestComplete(requestMeta, responseMeta, evMeta)
 					logEvent(log, ctx, event, opts.RecoverInternally)
 				}

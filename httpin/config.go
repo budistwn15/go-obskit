@@ -1,3 +1,6 @@
+// Package httpin provides legacy net/http request logging.
+//
+// Deprecated: use github.com/budistwn15/go-obskit/adapters/nethttp.
 package httpin
 
 import (
@@ -81,7 +84,7 @@ type runtimeConfig struct {
 
 func normalizeConfig(cfg Config) runtimeConfig {
 	def := DefaultConfig()
-	
+
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -109,7 +112,7 @@ func normalizeConfig(cfg Config) runtimeConfig {
 	if cfg.ShouldLogDetail == nil {
 		cfg.ShouldLogDetail = func(*http.Request, int, time.Duration) bool { return false }
 	}
-	
+
 	return runtimeConfig{
 		logger:               cfg.Logger,
 		correlationHeader:    cfg.CorrelationHeader,

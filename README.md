@@ -19,6 +19,54 @@ It is modular: teams can adopt only what they need (logger only, HTTP adapters, 
 - Low-noise defaults with optional selective logging/sampling
 - Modular adoption across different app types
 
+## Repository layout
+
+```text
+logger/        structured logging core
+correlation/   correlation context helpers
+errorsx/       classified application errors
+httplog/       shared HTTP event model and capture policy
+outbound/      preferred outbound HTTP integration
+joblog/        job and worker lifecycle logging
+redact/        header and JSON redaction
+sampling/      deterministic success sampling
+configenv/     environment example generation
+sinkenv/       sink selection from environment
+elastic/       Elasticsearch/OpenSearch sink
+httpsink/      generic HTTP sink
+lokisink/      Loki sink
+adapters/      dependency-isolated framework integrations
+cmd/           executable tools
+examples/      runnable integrations
+```
+
+Public package ownership:
+
+| Package | Purpose | Status | Preferred entry point |
+| --- | --- | --- | --- |
+| `logger` | Logging core | Current | `logger.New` |
+| `correlation`, `errorsx`, `joblog`, `redact`, `sampling` | Shared observability helpers | Current | Package APIs |
+| `httplog` | Shared HTTP metadata and policy | Current | Used directly or through adapters |
+| `adapters/nethttp` | Incoming `net/http` logging | Preferred | `nethttp.Middleware` |
+| `adapters/ginx`, `adapters/fiberx`, `adapters/gormx` | Framework integrations | Current | Package middleware/logger constructors |
+| `outbound` | Outbound HTTP logging | Preferred | `outbound.NewTransport` or `outbound.WrapClient` |
+| `httpin` | Legacy incoming HTTP logging | Deprecated | Migrate to `adapters/nethttp`; removal only in a major release |
+| `httpout` | Legacy outbound HTTP logging | Deprecated | Migrate to `outbound`; removal only in a major release |
+| `elastic`, `httpsink`, `lokisink`, `sinkenv` | Optional log shipping | Current | `NewMiddleware` or `sinkenv.FromEnv` |
+| `configenv` | Environment example generation | Current | `configenv.Inject` |
+
+Legacy HTTP migration keeps configuration explicit:
+
+```go
+// Incoming: replace httpin.New(...) with the preferred net/http adapter.
+handler := nethttp.Middleware(log, nethttp.DefaultOptions())(mux)
+
+// Outbound: replace httpout.WrapClient(...) with outbound.WrapClient(...).
+client := outbound.WrapClient(existingClient, log, outbound.DefaultOptions())
+```
+
+The legacy packages remain available for compatibility and will not be removed before a major release.
+
 ## Installation
 
 Core module:
@@ -40,8 +88,6 @@ go get github.com/budistwn15/go-obskit/httpsink
 go get github.com/budistwn15/go-obskit/lokisink
 go mod tidy
 ```
-
-Note: replace `OWNER/REPO` in the badge URL above with your actual repository path.
 
 ## Environment Variables (.env)
 
@@ -67,6 +113,8 @@ Minimal vars:
 For full tracing / advanced tuning:
 - `OBSKIT_HTTP_FORENSIC=true`
 - `OBSKIT_GORM_TRACING=true`
+
+Forensic options capture bodies, headers, and detailed metadata. Keep them disabled on default hot paths unless debugging needs justify the extra reads, redaction work, allocations, and log volume.
 
 Example loader/config wiring:
 - [`examples/config-from-env/main.go`](./examples/config-from-env/main.go)
@@ -301,6 +349,9 @@ elkMW := elastic.NewMiddleware(elastic.Config{
 	BlockOnQueueFull: false,
 	EnableMonitor:    true,
 	MonitorInterval:  15 * time.Second,
+
+	// Opt-in: parses and flattens JSON-looking string fields at extra CPU/memory cost.
+	ExpandJSONFields: false,
 })
 
 log := logger.New(logger.Config{
@@ -874,9 +925,11 @@ redaction:
 
 Run all tests:
 
-```bash
-go test ./...
+```powershell
+./test-all.ps1
 ```
+
+This runs `go test ./...` and `go vet ./...` for the root module, every adapter module, and examples without merging their `go.mod` files.
 
 Run race tests:
 

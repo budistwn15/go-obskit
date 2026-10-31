@@ -61,7 +61,7 @@ func findByMsg(logs []map[string]any, msg string) map[string]any {
 func TestCorrelationPropagation(t *testing.T) {
 	var buf bytes.Buffer
 	var capturedHeader string
-	
+
 	rt := roundTripFunc(
 		func(req *http.Request) (*http.Response, error) {
 			capturedHeader = req.Header.Get("X-Correlation-ID")
@@ -72,23 +72,26 @@ func TestCorrelationPropagation(t *testing.T) {
 			}, nil
 		},
 	)
-	
+
 	tr := New(
 		rt, Config{
 			Logger: newTestLogger(&buf, logger.LevelInfo),
 		},
 	)
-	
+
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/health", nil)
 	ctx := logger.WithCorrelationID(context.Background(), "corr-xyz")
 	req = req.WithContext(ctx)
-	
+
 	_, err := tr.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if capturedHeader != "corr-xyz" {
 		t.Fatalf("expected propagated correlation header, got=%s", capturedHeader)
+	}
+	if got := req.Header.Get("X-Correlation-ID"); got != "" {
+		t.Fatalf("caller request mutated with correlation header %q", got)
 	}
 }
 
@@ -109,13 +112,13 @@ func TestDurationAndSummaryLogging(t *testing.T) {
 			Logger: newTestLogger(&buf, logger.LevelInfo),
 		},
 	)
-	
+
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/orders?q=1", nil)
 	_, err := tr.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	
+
 	logs := parseLogLines(t, buf.String())
 	summary := findByMsg(logs, "outbound http request")
 	if summary == nil {
@@ -154,19 +157,19 @@ func TestRedactionAndTruncation(t *testing.T) {
 			},
 		},
 	)
-	
+
 	req, _ := http.NewRequest(
 		http.MethodPost, "http://example.com/login", strings.NewReader(`{"username":"john","password":"secret"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := tr.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	_, _ = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	
+
 	logs := parseLogLines(t, buf.String())
 	reqBody := findByMsg(logs, "outbound request body")
 	if reqBody == nil {
@@ -176,7 +179,7 @@ func TestRedactionAndTruncation(t *testing.T) {
 	if strings.Contains(reqLogged, "secret") {
 		t.Fatalf("expected request body to be redacted")
 	}
-	
+
 	respBody := findByMsg(logs, "outbound response body")
 	if respBody == nil {
 		t.Fatalf("missing response body log")
@@ -189,7 +192,7 @@ func TestRedactionAndTruncation(t *testing.T) {
 func TestGracefulFallbackOnBodyReadError(t *testing.T) {
 	var buf bytes.Buffer
 	brokenReader := io.NopCloser(errorReader{err: errors.New("read failed")})
-	
+
 	rt := roundTripFunc(
 		func(req *http.Request) (*http.Response, error) {
 			return &http.Response{
@@ -199,7 +202,7 @@ func TestGracefulFallbackOnBodyReadError(t *testing.T) {
 			}, nil
 		},
 	)
-	
+
 	tr := New(
 		rt, Config{
 			Logger:              newTestLogger(&buf, logger.LevelDebug),
@@ -210,7 +213,7 @@ func TestGracefulFallbackOnBodyReadError(t *testing.T) {
 			},
 		},
 	)
-	
+
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/resource", nil)
 	resp, err := tr.RoundTrip(req)
 	if err != nil {
@@ -219,10 +222,75 @@ func TestGracefulFallbackOnBodyReadError(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("request flow should not break")
 	}
-	
+
 	logs := parseLogLines(t, buf.String())
 	if findByMsg(logs, "outbound http request") == nil {
 		t.Fatalf("summary log should remain available")
+	}
+}
+
+func TestResponseCapturePreservesDataReturnedWithError(t *testing.T) {
+	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(&partialErrorReader{data: []byte(`{"ok":true}`)}),
+		}, nil
+	})
+	tr := New(rt, Config{
+		CaptureResponseBody: true,
+		LogResponseBody:     true,
+		ShouldLogDetail:     func(*http.Request, *http.Response, error, time.Duration) bool { return true },
+	})
+	req, _ := http.NewRequest(http.MethodGet, "http://example.com", nil)
+
+	resp, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if got := string(body); got != `{"ok":true}` {
+		t.Fatalf("caller response body = %q, want complete original body", got)
+	}
+}
+
+func TestRequestCapturePreservesDataReturnedWithError(t *testing.T) {
+	received := ""
+	rt := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		received = string(body)
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody}, nil
+	})
+	tr := New(rt, Config{CaptureRequestBody: true})
+	req, _ := http.NewRequest(http.MethodPost, "http://example.com", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = io.NopCloser(&partialErrorReader{data: []byte(`{"name":"john"}`)})
+
+	_, _ = tr.RoundTrip(req)
+
+	if received != `{"name":"john"}` {
+		t.Fatalf("transport body = %q, want complete original body", received)
+	}
+}
+
+func TestRequestRedactionFailureDoesNotLogOriginalContent(t *testing.T) {
+	var buf bytes.Buffer
+	rt := roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody}, nil
+	})
+	tr := New(rt, Config{
+		Logger:             newTestLogger(&buf, logger.LevelDebug),
+		CaptureRequestBody: true,
+		LogRequestBody:     true,
+		ShouldLogDetail:    func(*http.Request, *http.Response, error, time.Duration) bool { return true },
+	})
+	req, _ := http.NewRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"password":"secret-value"`))
+	req.Header.Set("Content-Type", "application/json")
+
+	_, _ = tr.RoundTrip(req)
+
+	if strings.Contains(buf.String(), "secret-value") {
+		t.Fatalf("redaction failure leaked original secret: %s", buf.String())
 	}
 }
 
@@ -239,13 +307,13 @@ func TestOutboundErrorLogging(t *testing.T) {
 			Layer:  logger.LayerContract,
 		},
 	)
-	
+
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/downstream", nil)
 	_, err := tr.RoundTrip(req)
 	if err == nil {
 		t.Fatalf("expected outbound error")
 	}
-	
+
 	logs := parseLogLines(t, buf.String())
 	summary := findByMsg(logs, "outbound http request")
 	if summary == nil {
@@ -256,8 +324,36 @@ func TestOutboundErrorLogging(t *testing.T) {
 	}
 }
 
+func TestWrapClientDoesNotMutateCaller(t *testing.T) {
+	base := roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, nil })
+	client := &http.Client{Transport: base, Timeout: time.Second}
+	wrapped := WrapClient(client, Config{})
+	if wrapped == client {
+		t.Fatal("WrapClient must return a shallow copy")
+	}
+	if _, ok := client.Transport.(roundTripFunc); !ok {
+		t.Fatal("caller transport was mutated")
+	}
+	if wrapped.Timeout != client.Timeout {
+		t.Fatalf("timeout = %v, want %v", wrapped.Timeout, client.Timeout)
+	}
+}
+
 type errorReader struct {
 	err error
+}
+
+type partialErrorReader struct {
+	data []byte
+	done bool
+}
+
+func (r *partialErrorReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+	r.done = true
+	return copy(p, r.data), io.ErrUnexpectedEOF
 }
 
 func (r errorReader) Read(_ []byte) (int, error) {

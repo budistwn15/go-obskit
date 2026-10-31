@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -185,6 +186,75 @@ func TestRetryAndSendSuccess(t *testing.T) {
 	}
 	if st.Retried == 0 {
 		t.Fatalf("expected retried > 0, stats=%+v", st)
+	}
+	if st.Failed != 0 {
+		t.Fatalf("retry success must not count as failed, stats=%+v", st)
+	}
+}
+
+func TestCloseCancelsRetryAndDropsFurtherRecords(t *testing.T) {
+	requestStarted := make(chan struct{}, 1)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case requestStarted <- struct{}{}:
+		default:
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer ts.Close()
+
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.Endpoint = ts.URL
+	cfg.Index = "app"
+	cfg.BatchSize = 1
+	cfg.MaxRetries = 3
+	cfg.RetryBackoff = 10 * time.Second
+	cfg.MaxBackoff = 10 * time.Second
+	cfg.BootstrapOnStart = false
+	cfg.EnableMonitor = false
+	m := NewMiddleware(cfg)
+	m.enqueue(slog.NewRecord(time.Now(), slog.LevelInfo, "before close", 0))
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("request did not start")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := m.Close(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("close: %v", err)
+	}
+	<-m.done
+	before := m.Stats()
+	m.enqueue(slog.NewRecord(time.Now(), slog.LevelInfo, "after close", 0))
+	after := m.Stats()
+	if after.Enqueued != before.Enqueued || after.Dropped != before.Dropped+1 {
+		t.Fatalf("post-close record must be dropped, before=%+v after=%+v", before, after)
+	}
+}
+
+func TestConfigOwnership(t *testing.T) {
+	client := &http.Client{}
+	fields := map[string]any{"owner": "caller"}
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.Endpoint = "http://example.invalid"
+	cfg.Index = "app"
+	cfg.HTTPClient = client
+	cfg.StaticFields = fields
+	cfg.BootstrapOnStart = false
+	m := NewMiddleware(cfg)
+	fields["owner"] = "mutated"
+	if client.Timeout != 0 {
+		t.Fatalf("caller client mutated: timeout=%v", client.Timeout)
+	}
+	if m.cfg.StaticFields["owner"] != "caller" {
+		t.Fatalf("static fields were not copied: %v", m.cfg.StaticFields)
+	}
+	if err := m.Close(context.Background()); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 }
 

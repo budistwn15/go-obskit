@@ -31,10 +31,10 @@ func captureRequestBody(req *http.Request, opts Options, enabled bool) requestBo
 	}
 	readLimit := int64(maxBytes + 1)
 	buf, err := io.ReadAll(io.LimitReader(req.Body, readLimit))
+	req.Body = &replayBody{Reader: io.MultiReader(bytes.NewReader(buf), req.Body), Closer: req.Body}
 	if err != nil {
 		return requestBodyCapture{skipped: true}
 	}
-	req.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf), req.Body))
 
 	captured := httplog.CaptureBody(contentType, buf, maxBytes, opts.BodyJSONDenylist)
 	return requestBodyCapture{
@@ -42,6 +42,11 @@ func captureRequestBody(req *http.Request, opts Options, enabled bool) requestBo
 		truncated: captured.Truncated,
 		skipped:   captured.Skipped,
 	}
+}
+
+type replayBody struct {
+	io.Reader
+	io.Closer
 }
 
 func requestMetaFromRequest(req *http.Request, opts Options) httplog.RequestMeta {

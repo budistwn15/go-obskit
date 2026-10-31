@@ -1,3 +1,4 @@
+// Package redact removes sensitive values from headers and JSON payloads.
 package redact
 
 import (
