@@ -23,3 +23,7 @@ dist/
 .env
 .env.local
 .env.*.local
+
+# local planning and agent instructions
+*.md
+!README.md

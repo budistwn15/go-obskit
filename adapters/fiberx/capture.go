@@ -1,7 +1,7 @@
 package fiberx
 
 import (
-	"github.com/budistwn15/go-obskit/httplog"
+	"github.com/budistwn15/go-obskit/v2/httplog"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -12,7 +12,7 @@ func captureRequestMeta(c *fiber.Ctx, opts Options) httplog.RequestMeta {
 		Host:   c.Hostname(),
 		Path:   c.Path(),
 		Route:  routePath(c),
-		URL:    c.OriginalURL(),
+		URL:    httplog.SafeURL(c.OriginalURL()),
 	}
 	if ra := c.Context().RemoteAddr(); ra != nil {
 		httplog.FillSourceFromRemoteAddr(&meta, ra.String())

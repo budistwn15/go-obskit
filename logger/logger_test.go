@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -61,6 +62,13 @@ func TestNew_CustomSchemaVersion(t *testing.T) {
 	}
 	if m[FieldSchemaVersion] != "2" {
 		t.Fatalf("expected custom schema.version, got=%v", m[FieldSchemaVersion])
+	}
+}
+
+func TestBasicLoggingAllocationBudget(t *testing.T) {
+	log := New(Config{Output: io.Discard})
+	if got := testing.AllocsPerRun(1000, func() { log.Info("budget") }); got != 0 {
+		t.Fatalf("basic logging allocations = %.2f, want 0", got)
 	}
 }
 
@@ -127,6 +135,22 @@ func TestSafeHandlerNoPanic(t *testing.T) {
 		}
 	}()
 	l.Log(context.Background(), slog.LevelInfo, "no panic")
+}
+
+type panicDerivedHandler struct{ slog.Handler }
+
+func (panicDerivedHandler) WithAttrs([]slog.Attr) slog.Handler { panic("attrs") }
+func (panicDerivedHandler) WithGroup(string) slog.Handler      { panic("group") }
+
+func TestSafeHandlerDerivationFallsBack(t *testing.T) {
+	base := slog.NewJSONHandler(io.Discard, nil)
+	h := newSafeHandler(panicDerivedHandler{Handler: base})
+	if got := h.WithAttrs([]slog.Attr{slog.String("key", "value")}); got == nil {
+		t.Fatal("WithAttrs returned nil after panic")
+	}
+	if got := h.WithGroup("group"); got == nil {
+		t.Fatal("WithGroup returned nil after panic")
+	}
 }
 
 func TestConcurrentUse(t *testing.T) {

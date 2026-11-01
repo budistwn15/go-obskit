@@ -1,3 +1,4 @@
+// Package correlation stores and propagates correlation IDs through contexts.
 package correlation
 
 import (
@@ -37,9 +38,13 @@ func GetOrGenerate(ctx context.Context) (context.Context, string) {
 }
 
 func Generate() string {
+	return generate(rand.Read)
+}
+
+func generate(read func([]byte) (int, error)) string {
 	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "corr-fallback"
+	if _, err := read(b[:]); err != nil {
+		return ""
 	}
 	return hex.EncodeToString(b[:])
 }

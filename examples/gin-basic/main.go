@@ -3,8 +3,8 @@ package main
 import (
 	"net/http"
 
-	"github.com/budistwn15/go-obskit/adapters/ginx"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/adapters/ginx/v2"
+	"github.com/budistwn15/go-obskit/v2/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -16,7 +16,7 @@ func main() {
 			Level:       logger.LevelInfo,
 		},
 	)
-	
+
 	r := gin.New()
 	r.Use(ginx.Middleware(log, ginx.DefaultOptions()))
 	r.GET(
@@ -24,6 +24,6 @@ func main() {
 			c.JSON(http.StatusOK, gin.H{"ok": true})
 		},
 	)
-	
+
 	_ = r.Run(":8081")
 }

@@ -10,7 +10,7 @@ func recordToDocument(rec slog.Record, static map[string]any) map[string]any {
 	doc := make(map[string]any, 20)
 	doc["@timestamp"] = rec.Time.UTC().Format(time.RFC3339Nano)
 	doc["message"] = rec.Message
-	doc["level"] = rec.Level.String()
+	doc["log.level"] = rec.Level.String()
 	for k, v := range static {
 		doc[k] = v
 	}

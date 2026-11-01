@@ -9,9 +9,14 @@ type Event struct {
 }
 
 func BuildRequestStart(req RequestMeta, ev EventMeta) Event {
-	attrs := []slog.Attr{slog.String("event", "http.request.start")}
-	attrs = append(attrs, RequestAttrs(NormalizeRequestMeta(req))...)
-	attrs = append(attrs, EventAttrs(ev)...)
+	ev.Category = "web"
+	ev.Outcome = "unknown"
+	attrs := joinAttrs(
+		slog.String("event.action", "http.request.start"),
+		RequestAttrs(NormalizeRequestMeta(req)),
+		nil,
+		EventAttrs(ev),
+	)
 	return Event{
 		Message: "http request started",
 		Level:   slog.LevelInfo,
@@ -20,10 +25,17 @@ func BuildRequestStart(req RequestMeta, ev EventMeta) Event {
 }
 
 func BuildRequestComplete(req RequestMeta, res ResponseMeta, ev EventMeta) Event {
-	attrs := []slog.Attr{slog.String("event", "http.request.complete")}
-	attrs = append(attrs, RequestAttrs(NormalizeRequestMeta(req))...)
-	attrs = append(attrs, ResponseAttrs(NormalizeResponseMeta(res))...)
-	attrs = append(attrs, EventAttrs(ev)...)
+	ev.Category = "web"
+	ev.Outcome = "success"
+	if res.StatusCode >= 400 {
+		ev.Outcome = "failure"
+	}
+	attrs := joinAttrs(
+		slog.String("event.action", "http.request.complete"),
+		RequestAttrs(NormalizeRequestMeta(req)),
+		ResponseAttrs(NormalizeResponseMeta(res)),
+		EventAttrs(ev),
+	)
 	return Event{
 		Message: "http request completed",
 		Level:   slog.LevelInfo,
@@ -32,15 +44,27 @@ func BuildRequestComplete(req RequestMeta, res ResponseMeta, ev EventMeta) Event
 }
 
 func BuildRequestError(req RequestMeta, res ResponseMeta, ev EventMeta) Event {
-	attrs := []slog.Attr{slog.String("event", "http.request.error")}
-	attrs = append(attrs, RequestAttrs(NormalizeRequestMeta(req))...)
-	attrs = append(attrs, ResponseAttrs(NormalizeResponseMeta(res))...)
-	attrs = append(attrs, EventAttrs(ev)...)
+	ev.Category = "web"
+	ev.Outcome = "failure"
+	attrs := joinAttrs(
+		slog.String("event.action", "http.request.error"),
+		RequestAttrs(NormalizeRequestMeta(req)),
+		ResponseAttrs(NormalizeResponseMeta(res)),
+		EventAttrs(ev),
+	)
 	return Event{
 		Message: "http request failed",
 		Level:   slog.LevelError,
 		Attrs:   attrs,
 	}
+}
+
+func joinAttrs(first slog.Attr, request, response, event []slog.Attr) []slog.Attr {
+	attrs := make([]slog.Attr, 1, 1+len(request)+len(response)+len(event))
+	attrs[0] = first
+	attrs = append(attrs, request...)
+	attrs = append(attrs, response...)
+	return append(attrs, event...)
 }
 
 func EventArgs(attrs []slog.Attr) []any {

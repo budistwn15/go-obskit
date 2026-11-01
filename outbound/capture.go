@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/budistwn15/go-obskit/httplog"
+	"github.com/budistwn15/go-obskit/v2/httplog"
 )
 
 type bodyCapture struct {
@@ -20,7 +20,7 @@ func captureRequest(req *http.Request, opts Options, captureBody bool) (httplog.
 		Scheme:    req.URL.Scheme,
 		Host:      req.URL.Host,
 		Path:      req.URL.Path,
-		URL:       req.URL.String(),
+		URL:       httplog.SafeURL(req.URL.String()),
 		UserAgent: req.Header.Get("User-Agent"),
 	}
 	httplog.FillTargetFromURL(&meta, req.URL)
@@ -37,8 +37,8 @@ func captureRequest(req *http.Request, opts Options, captureBody bool) (httplog.
 		if httplog.IsSafeBodyContentType(contentType) {
 			readLimit := int64(opts.MaxBodyBytes + 1)
 			buf, err := io.ReadAll(io.LimitReader(req.Body, readLimit))
+			req.Body = &replayBody{Reader: io.MultiReader(bytes.NewReader(buf), req.Body), Closer: req.Body}
 			if err == nil {
-				req.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf), req.Body))
 				body := httplog.CaptureBody(contentType, buf, opts.MaxBodyBytes, opts.BodyJSONDenylist)
 				captured.value = body.Value
 				captured.truncated = body.Truncated
@@ -68,8 +68,8 @@ func captureResponse(resp *http.Response, opts Options, captureBody bool) (httpl
 		if httplog.IsSafeBodyContentType(contentType) {
 			readLimit := int64(opts.MaxBodyBytes + 1)
 			buf, err := io.ReadAll(io.LimitReader(resp.Body, readLimit))
+			resp.Body = &replayBody{Reader: io.MultiReader(bytes.NewReader(buf), resp.Body), Closer: resp.Body}
 			if err == nil {
-				resp.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf), resp.Body))
 				body := httplog.CaptureBody(contentType, buf, opts.MaxBodyBytes, opts.BodyJSONDenylist)
 				captured.value = body.Value
 				captured.truncated = body.Truncated
@@ -79,6 +79,11 @@ func captureResponse(resp *http.Response, opts Options, captureBody bool) (httpl
 		}
 	}
 	return httplog.NormalizeResponseMeta(meta), captured
+}
+
+type replayBody struct {
+	io.Reader
+	io.Closer
 }
 
 func traceIDs(req *http.Request) (traceID, spanID string) {

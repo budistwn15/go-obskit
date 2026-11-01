@@ -17,18 +17,85 @@ jobs:
           - adapters/ginx
           - adapters/fiberx
           - adapters/gormx
+          - adapters/grpcx
+          - adapters/otel
           - examples
     defaults:
       run:
         working-directory: ${{ matrix.module }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
 
       - name: Run tests
         run: go test ./...
+
+      - name: Run vet
+        run: go vet ./...
+
+  race:
+    name: Race (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - .
+          - adapters/nethttp
+          - adapters/ginx
+          - adapters/fiberx
+          - adapters/gormx
+          - adapters/grpcx
+          - adapters/otel
+          - examples
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+
+      - name: Run race tests
+        env:
+          CGO_ENABLED: "1"
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          go test -race ./... 2>&1 | tee race.log
+          status=${PIPESTATUS[0]}
+          printf '```text\n' >> "$GITHUB_STEP_SUMMARY"
+          cat race.log >> "$GITHUB_STEP_SUMMARY"
+          printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -ne 0 ]; then
+            message=$(tail -n 200 race.log | sed 's/%/%25/g; s/\r/%0D/g; s/$/%0A/' | tr -d '\n')
+            printf '::error title=Race test failure::%s\n' "$message"
+          fi
+          exit "$status"
+
+  soak-smoke:
+    name: Soak smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run bounded overload soak
+        env:
+          OBSKIT_SOAK_DURATION: 5s
+        run: go test -run '^TestSoak(Stdout|DirectHTTP)$' -timeout 30s .

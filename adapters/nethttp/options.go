@@ -1,9 +1,10 @@
+// Package nethttp provides the preferred incoming net/http logging middleware.
 package nethttp
 
 import (
 	"net/http"
 
-	"github.com/budistwn15/go-obskit/httplog"
+	"github.com/budistwn15/go-obskit/v2/httplog"
 )
 
 type Options struct {
@@ -25,6 +26,7 @@ func ForensicOptions() Options {
 
 func normalizeOptions(opts Options) Options {
 	def := DefaultOptions()
+	opts.RecoverInternally = true
 	if opts.CorrelationHeader == "" {
 		opts.CorrelationHeader = def.CorrelationHeader
 	}

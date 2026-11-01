@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func BenchmarkMiddlewareMinimal(b *testing.B) {
@@ -28,7 +28,7 @@ func BenchmarkMiddlewareMinimal(b *testing.B) {
 		),
 	)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/health", nil)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
@@ -49,7 +49,7 @@ func BenchmarkMiddlewareWithBodyCapture(b *testing.B) {
 	opts.CaptureResponseBody = true
 	opts.LogErrorBodies = true
 	opts.MaxBodyBytes = 128
-	
+
 	h := Middleware(log, opts)(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +59,7 @@ func BenchmarkMiddlewareWithBodyCapture(b *testing.B) {
 			},
 		),
 	)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		req := httptest.NewRequest(
@@ -90,7 +90,7 @@ func BenchmarkMiddlewareSampledSuccess(b *testing.B) {
 		),
 	)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/health", nil)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -40,7 +40,7 @@ func TestMiddleware_FiberLifecyclePathAndCorrelation(t *testing.T) {
 	)
 	opts := DefaultOptions()
 	opts.CorrelationHeader = "X-Correlation-ID"
-	
+
 	app := fiber.New()
 	app.Use(Middleware(log, opts))
 	app.Get(
@@ -48,7 +48,7 @@ func TestMiddleware_FiberLifecyclePathAndCorrelation(t *testing.T) {
 			return c.JSON(fiber.Map{"ok": true})
 		},
 	)
-	
+
 	req := httptest.NewRequest("GET", "/orders/42", nil)
 	req.Header.Set("X-Correlation-ID", "corr-fiber")
 	resp, err := app.Test(req)
@@ -61,7 +61,7 @@ func TestMiddleware_FiberLifecyclePathAndCorrelation(t *testing.T) {
 	if resp.Header.Get("X-Correlation-ID") != "corr-fiber" {
 		t.Fatalf("correlation header not propagated")
 	}
-	
+
 	logs := parseLines(t, buf.String())
 	if len(logs) == 0 {
 		t.Fatalf("expected logs")

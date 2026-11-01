@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func parseLines(t *testing.T, raw string) []map[string]any {
@@ -77,12 +77,60 @@ func TestMiddleware_CorrelationPropagationAndBodyRestore(t *testing.T) {
 		t.Fatalf("expected log events")
 	}
 	last := logs[len(logs)-1]
-	if last["duration_ms"] == nil {
-		t.Fatalf("duration_ms must exist")
+	if last["event.duration"] == nil {
+		t.Fatalf("event.duration must exist")
 	}
-	if int(last["http.status_code"].(float64)) != http.StatusCreated {
+	if int(last["http.response.status_code"].(float64)) != http.StatusCreated {
 		t.Fatalf("status code must be logged")
 	}
+}
+
+func TestMiddleware_PreservesBodyWhenCaptureReadReturnsDataAndError(t *testing.T) {
+	opts := DefaultOptions()
+	opts.CaptureRequestBody = true
+	received := ""
+	h := Middleware(nil, opts)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received = string(body)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = io.NopCloser(&partialErrorReader{data: []byte(`{"name":"john"}`)})
+
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if received != `{"name":"john"}` {
+		t.Fatalf("downstream body = %q, want complete original body", received)
+	}
+}
+
+func TestMiddleware_RecordsFirstResponseStatus(t *testing.T) {
+	var buf bytes.Buffer
+	log := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
+	h := Middleware(log, DefaultOptions())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+
+	logs := parseLines(t, buf.String())
+	if got := int(logs[len(logs)-1]["http.response.status_code"].(float64)); got != http.StatusCreated {
+		t.Fatalf("logged status = %d, want first status %d", got, http.StatusCreated)
+	}
+}
+
+type partialErrorReader struct {
+	data []byte
+	done bool
+}
+
+func (r *partialErrorReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+	r.done = true
+	return copy(p, r.data), io.ErrUnexpectedEOF
 }
 
 func TestMiddleware_SuccessSamplingKeepsSlow(t *testing.T) {
@@ -116,11 +164,8 @@ func TestMiddleware_SuccessSamplingKeepsSlow(t *testing.T) {
 		t.Fatalf("slow events should not be sampled out")
 	}
 	last := logs[len(logs)-1]
-	if slow, ok := last["slow"].(bool); !ok || !slow {
+	if slow, ok := last["event.slow"].(bool); !ok || !slow {
 		t.Fatalf("expected slow=true")
-	}
-	if _, ok := last["threshold_ms"]; !ok {
-		t.Fatalf("expected threshold_ms")
 	}
 }
 
@@ -161,10 +206,10 @@ func TestMiddleware_ForensicCapturesBodiesAndHeadersOnSuccess(t *testing.T) {
 		t.Fatalf("expected logs")
 	}
 	last := logs[len(logs)-1]
-	if _, ok := last["http.request.body"]; !ok {
+	if _, ok := last["http.request.body.content"]; !ok {
 		t.Fatalf("expected request body")
 	}
-	if _, ok := last["http.response.body"]; !ok {
+	if _, ok := last["http.response.body.content"]; !ok {
 		t.Fatalf("expected response body on success")
 	}
 	reqHeaders, ok := last["http.request.headers"].(map[string]any)

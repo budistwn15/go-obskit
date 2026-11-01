@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/budistwn15/go-obskit/httplog"
+	"github.com/budistwn15/go-obskit/v2/httplog"
 )
 
 type requestBodyCapture struct {
@@ -31,10 +31,10 @@ func captureRequestBody(req *http.Request, opts Options, enabled bool) requestBo
 	}
 	readLimit := int64(maxBytes + 1)
 	buf, err := io.ReadAll(io.LimitReader(req.Body, readLimit))
+	req.Body = &replayBody{Reader: io.MultiReader(bytes.NewReader(buf), req.Body), Closer: req.Body}
 	if err != nil {
 		return requestBodyCapture{skipped: true}
 	}
-	req.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf), req.Body))
 
 	captured := httplog.CaptureBody(contentType, buf, maxBytes, opts.BodyJSONDenylist)
 	return requestBodyCapture{
@@ -44,13 +44,18 @@ func captureRequestBody(req *http.Request, opts Options, enabled bool) requestBo
 	}
 }
 
+type replayBody struct {
+	io.Reader
+	io.Closer
+}
+
 func requestMetaFromRequest(req *http.Request, opts Options) httplog.RequestMeta {
 	meta := httplog.RequestMeta{
 		Method: req.Method,
 		Scheme: requestScheme(req),
 		Host:   req.Host,
 		Path:   req.URL.Path,
-		URL:    req.URL.String(),
+		URL:    httplog.SafeURL(req.URL.String()),
 	}
 	httplog.FillSourceFromRemoteAddr(&meta, req.RemoteAddr)
 	httplog.FillTargetFromRequest(&meta, req)

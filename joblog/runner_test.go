@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func parseLogs(t *testing.T, raw string) []map[string]any {
@@ -61,16 +61,16 @@ func TestEndCompleteAndFail(t *testing.T) {
 	run1.End(nil)
 	logs1 := parseLogs(t, buf1.String())
 	last1 := logs1[len(logs1)-1]
-	if last1["event"] != "job.completed" {
+	if last1["event.action"] != "job.completed" {
 		t.Fatalf("expected job.completed event")
 	}
-	
+
 	var buf2 bytes.Buffer
 	_, run2 := Start(context.Background(), newTestLogger(&buf2), Meta{JobName: "fail-job"})
 	run2.End(errors.New("boom"))
 	logs2 := parseLogs(t, buf2.String())
 	last2 := logs2[len(logs2)-1]
-	if last2["event"] != "job.failed" {
+	if last2["event.action"] != "job.failed" {
 		t.Fatalf("expected job.failed event")
 	}
 }
@@ -82,7 +82,7 @@ func TestFailAndCompleteMethods(t *testing.T) {
 	run.Complete()
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
-	if last["event"] != "job.failed" {
+	if last["event.action"] != "job.failed" {
 		t.Fatalf("expected failed terminal event")
 	}
 }
@@ -94,7 +94,7 @@ func TestRetry(t *testing.T) {
 	logs := parseLogs(t, buf.String())
 	found := false
 	for _, l := range logs {
-		if l["event"] == "job.retry" {
+		if l["event.action"] == "job.retry" {
 			found = true
 		}
 	}
@@ -121,14 +121,14 @@ func TestContextPropagationAndCorrelationPreserve(t *testing.T) {
 	baseCtx := correlation.WithID(context.Background(), "corr-job-1")
 	ctx, run := Start(baseCtx, newTestLogger(&buf), Meta{JobName: "ctx-job"})
 	run.Complete()
-	
+
 	if correlation.ID(ctx) != "corr-job-1" {
 		t.Fatalf("correlation id should be preserved")
 	}
-	
+
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
-	if last["correlation_id"] != "corr-job-1" {
+	if last["correlation.id"] != "corr-job-1" {
 		t.Fatalf("expected correlation_id in logs")
 	}
 }
@@ -145,7 +145,7 @@ func TestCustomJobFieldsRemainGeneric(t *testing.T) {
 		},
 	)
 	run.Complete()
-	
+
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
 	fields, ok := last["job.fields"].(map[string]any)
@@ -165,17 +165,11 @@ func TestSlowThresholdFields(t *testing.T) {
 	_ = ctx
 	time.Sleep(3 * time.Millisecond)
 	run.Complete()
-	
+
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
-	if slow, ok := last["slow"].(bool); !ok || !slow {
-		t.Fatalf("expected slow=true, got=%v", last["slow"])
-	}
-	if _, ok := last["slow_threshold_ms"]; !ok {
-		t.Fatalf("expected slow_threshold_ms")
-	}
-	if _, ok := last["threshold_ms"]; !ok {
-		t.Fatalf("expected threshold_ms")
+	if slow, ok := last["event.slow"].(bool); !ok || !slow {
+		t.Fatalf("expected event.slow=true, got=%v", last["event.slow"])
 	}
 }
 
@@ -184,7 +178,7 @@ func TestSuccessSamplingForCompleted(t *testing.T) {
 	var buf bytes.Buffer
 	opts := DefaultOptions()
 	opts.SuccessSampleEvery = 3
-	
+
 	for i := 0; i < 2; i++ {
 		_, run := Start(context.Background(), newTestLogger(&buf), Meta{JobName: "sample-job"}, opts)
 		run.Complete()
@@ -192,20 +186,20 @@ func TestSuccessSamplingForCompleted(t *testing.T) {
 	logs := parseLogs(t, buf.String())
 	completed := 0
 	for _, l := range logs {
-		if l["event"] == "job.completed" {
+		if l["event.action"] == "job.completed" {
 			completed++
 		}
 	}
 	if completed != 0 {
 		t.Fatalf("first two completed events should be sampled out")
 	}
-	
+
 	_, run := Start(context.Background(), newTestLogger(&buf), Meta{JobName: "sample-job"}, opts)
 	run.Complete()
 	logs = parseLogs(t, buf.String())
 	completed = 0
 	for _, l := range logs {
-		if l["event"] == "job.completed" {
+		if l["event.action"] == "job.completed" {
 			completed++
 		}
 	}
@@ -223,12 +217,12 @@ func TestSlowCompletedNotSampledOut(t *testing.T) {
 	_, run := Start(context.Background(), newTestLogger(&buf), Meta{JobName: "slow-keep-job"}, opts)
 	time.Sleep(3 * time.Millisecond)
 	run.Complete()
-	
+
 	logs := parseLogs(t, buf.String())
 	foundSlowComplete := false
 	for _, l := range logs {
-		if l["event"] == "job.completed" {
-			if slow, ok := l["slow"].(bool); ok && slow {
+		if l["event.action"] == "job.completed" {
+			if slow, ok := l["event.slow"].(bool); ok && slow {
 				foundSlowComplete = true
 			}
 		}

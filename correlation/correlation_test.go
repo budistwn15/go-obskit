@@ -2,6 +2,7 @@ package correlation
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -39,5 +40,12 @@ func TestGenerateConcurrent(t *testing.T) {
 	wg.Wait()
 	if failed.Load() {
 		t.Fatalf("generated id must not be empty")
+	}
+}
+
+func TestGenerateReturnsEmptyWhenEntropyFails(t *testing.T) {
+	got := generate(func([]byte) (int, error) { return 0, errors.New("entropy unavailable") })
+	if got != "" {
+		t.Fatalf("generate() = %q, want empty ID when entropy fails", got)
 	}
 }

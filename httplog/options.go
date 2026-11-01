@@ -3,7 +3,7 @@ package httplog
 import (
 	"time"
 
-	"github.com/budistwn15/go-obskit/redact"
+	"github.com/budistwn15/go-obskit/v2/redact"
 )
 
 type DecisionHook func(meta DecisionMeta) bool
@@ -52,7 +52,7 @@ func DefaultOptions() Options {
 		CorrelationHeader: "X-Correlation-ID",
 
 		CaptureHeaders:      false,
-		CaptureQuery:        true,
+		CaptureQuery:        false,
 		CaptureRequestBody:  false,
 		CaptureResponseBody: false,
 		MaxBodyBytes:        4 * 1024,

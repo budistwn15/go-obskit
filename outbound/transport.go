@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/httplog"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/httplog"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 type transport struct {
@@ -64,8 +64,9 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	)
 
 	var reqMeta httplog.RequestMeta
-	if anyLifecycleLog {
-		needReqBody := t.opts.CaptureRequestBody && (t.opts.LogRequestStart || t.opts.LogRequestComplete || t.opts.LogRequestError)
+	needReqBody := t.opts.CaptureRequestBody && anyLifecycleLog
+	reqMetaReady := t.opts.LogRequestStart || needReqBody
+	if reqMetaReady {
 		reqMeta, _ = captureRequest(outReq, t.opts, needReqBody)
 	}
 	if t.opts.LogRequestStart {
@@ -76,19 +77,16 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			startEvent := httplog.Event{
 				Message: "outbound http request started",
 				Level:   slog.LevelInfo,
-				Attrs: append(
-					[]slog.Attr{slog.String("event", "http.outbound.start")},
-					append(
-						httplog.RequestAttrs(reqMeta),
-						httplog.EventAttrs(
-							httplog.EventMeta{
-								CorrelationID: corrID,
-								RequestID:     requestID,
-								TraceID:       traceID,
-								SpanID:        spanID,
-							},
-						)...,
-					)...,
+				Attrs: outboundAttrs(
+					"http.outbound.start", httplog.RequestAttrs(reqMeta), nil,
+					httplog.EventAttrs(httplog.EventMeta{
+						Category:      "web",
+						Outcome:       "unknown",
+						CorrelationID: corrID,
+						RequestID:     requestID,
+						TraceID:       traceID,
+						SpanID:        spanID,
+					}),
 				),
 			}
 			safeLog(
@@ -100,8 +98,13 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	resp, err := t.base.RoundTrip(outReq)
+	if !anyLifecycleLog {
+		return resp, err
+	}
 	duration := time.Since(start)
 	evMeta := httplog.EventMeta{
+		Category:        "web",
+		Outcome:         "success",
 		CorrelationID:   corrID,
 		RequestID:       requestID,
 		TraceID:         traceID,
@@ -117,6 +120,9 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	if err != nil {
 		if t.opts.LogRequestError {
+			if !reqMetaReady {
+				reqMeta, _ = captureRequest(outReq, t.opts, false)
+			}
 			if !shouldLog(
 				t.sampler, t.opts.ShouldLogError, "error", reqMeta, httplog.ResponseMeta{}, evMeta, err,
 				t.opts.RecoverInternally,
@@ -125,12 +131,12 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 			evMeta.ErrorKind = classifyError(err)
 			evMeta.ErrorMessage = err.Error()
+			evMeta.Outcome = "failure"
 			event := httplog.Event{
 				Message: "outbound http request failed",
 				Level:   slog.LevelError,
-				Attrs: append(
-					[]slog.Attr{slog.String("event", "http.outbound.error")},
-					append(httplog.RequestAttrs(reqMeta), httplog.EventAttrs(evMeta)...)...,
+				Attrs: outboundAttrs(
+					"http.outbound.error", httplog.RequestAttrs(reqMeta), nil, httplog.EventAttrs(evMeta),
 				),
 			}
 			safeLog(
@@ -142,6 +148,24 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return resp, err
 	}
 
+	statusCode := 0
+	if resp != nil {
+		statusCode = resp.StatusCode
+	}
+	if statusCode >= 400 {
+		evMeta.Outcome = "failure"
+	}
+	if statusCode < 400 && t.opts.LogRequestComplete && t.opts.ShouldLogComplete == nil && !evMeta.Slow &&
+		!t.sampler.ShouldLog(httplog.DecisionMeta{
+			Event:     "complete",
+			Response:  httplog.ResponseMeta{StatusCode: statusCode},
+			EventMeta: httplog.EventMeta{Duration: duration, Slow: false},
+		}) {
+		return resp, nil
+	}
+	if t.opts.LogRequestComplete && !reqMetaReady {
+		reqMeta, _ = captureRequest(outReq, t.opts, false)
+	}
 	var resMeta httplog.ResponseMeta
 	if t.opts.LogRequestComplete {
 		needRespBody := t.opts.CaptureResponseBody && t.opts.LogErrorBodies
@@ -162,7 +186,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	if t.opts.LogRequestComplete {
-		if !shouldLog(
+		if t.opts.ShouldLogComplete != nil && !shouldLog(
 			t.sampler, t.opts.ShouldLogComplete, "complete", reqMeta, resMeta, evMeta, nil, t.opts.RecoverInternally,
 		) {
 			return resp, err
@@ -170,12 +194,11 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		event := httplog.Event{
 			Message: "outbound http request completed",
 			Level:   slog.LevelInfo,
-			Attrs: append(
-				[]slog.Attr{slog.String("event", "http.outbound.complete")},
-				append(
-					append(httplog.RequestAttrs(reqMeta), httplog.ResponseAttrs(resMeta)...),
-					httplog.EventAttrs(evMeta)...,
-				)...,
+			Attrs: outboundAttrs(
+				"http.outbound.complete",
+				httplog.RequestAttrs(reqMeta),
+				httplog.ResponseAttrs(resMeta),
+				httplog.EventAttrs(evMeta),
 			),
 		}
 		safeLog(
@@ -186,6 +209,14 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	return resp, err
+}
+
+func outboundAttrs(event string, request, response, eventMeta []slog.Attr) []slog.Attr {
+	attrs := make([]slog.Attr, 1, 1+len(request)+len(response)+len(eventMeta))
+	attrs[0] = slog.String("event.action", event)
+	attrs = append(attrs, request...)
+	attrs = append(attrs, response...)
+	return append(attrs, eventMeta...)
 }
 
 func shouldLog(
@@ -217,6 +248,7 @@ func WrapClient(client *http.Client, log *slog.Logger, opts Options) *http.Clien
 	if client == nil {
 		client = &http.Client{}
 	}
-	client.Transport = NewTransport(client.Transport, log, opts)
-	return client
+	wrapped := *client
+	wrapped.Transport = NewTransport(client.Transport, log, opts)
+	return &wrapped
 }

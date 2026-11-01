@@ -2,7 +2,9 @@ package lokisink
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,7 +23,7 @@ type lokiPush struct {
 }
 
 func (m *Middleware) run() {
-	defer m.wg.Done()
+	defer close(m.done)
 	ticker := time.NewTicker(m.cfg.FlushInterval)
 	defer ticker.Stop()
 
@@ -30,7 +32,12 @@ func (m *Middleware) run() {
 		if len(batch) == 0 {
 			return
 		}
-		if err := m.ship(batch); err != nil {
+		err := m.ship(m.shipContext(), batch)
+		if errors.Is(err, context.Canceled) && m.closed.Load() {
+			err = m.ship(m.closeCtx, batch)
+		}
+		if err != nil {
+			m.failed.Add(uint64(len(batch)))
 			m.handleErr(err)
 		} else {
 			m.sent.Add(uint64(len(batch)))
@@ -40,6 +47,7 @@ func (m *Middleware) run() {
 	for {
 		select {
 		case <-m.stop:
+			<-m.enqueuesDone
 			for {
 				select {
 				case rec := <-m.queue:
@@ -63,19 +71,29 @@ func (m *Middleware) run() {
 	}
 }
 
-func (m *Middleware) ship(batch []slog.Record) error {
+func (m *Middleware) shipContext() context.Context {
+	if m.closed.Load() {
+		return m.closeCtx
+	}
+	return m.ctx
+}
+
+func (m *Middleware) ship(ctx context.Context, batch []slog.Record) error {
 	payload, err := m.buildPayload(batch)
 	if err != nil {
 		return err
 	}
+	if m.cfg.MaxBatchBytes > 0 && len(payload) > m.cfg.MaxBatchBytes {
+		return fmt.Errorf("loki batch exceeds %d bytes", m.cfg.MaxBatchBytes)
+	}
 	var allErr error
 	for attempt := 0; attempt <= m.cfg.MaxRetries; attempt++ {
-		err := m.send(payload)
+		err := m.send(ctx, payload)
 		if err == nil {
 			return nil
 		}
 		allErr = joinErr(allErr, err)
-		if attempt == m.cfg.MaxRetries {
+		if attempt == m.cfg.MaxRetries || !isRetryable(err) {
 			break
 		}
 		m.retryErr(attempt+1, err)
@@ -83,7 +101,9 @@ func (m *Middleware) ship(batch []slog.Record) error {
 		if backoff > m.cfg.MaxBackoff {
 			backoff = m.cfg.MaxBackoff
 		}
-		time.Sleep(backoff)
+		if err := waitRetry(ctx, backoff); err != nil {
+			return errors.Join(allErr, err)
+		}
 	}
 	return allErr
 }
@@ -114,12 +134,12 @@ func (m *Middleware) buildPayload(batch []slog.Record) ([]byte, error) {
 	return json.Marshal(push)
 }
 
-func (m *Middleware) send(payload []byte) error {
+func (m *Middleware) send(ctx context.Context, payload []byte) error {
 	endpoint := m.cfg.Endpoint
 	if !strings.Contains(endpoint, "/loki/api/v1/push") {
 		endpoint = endpoint + "/loki/api/v1/push"
 	}
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -136,12 +156,30 @@ func (m *Middleware) send(payload []byte) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 500 || resp.StatusCode == 429 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("loki server status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		return fmt.Errorf("loki server status=%d", resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("loki rejected status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		return permanentError{fmt.Errorf("loki rejected status=%d", resp.StatusCode)}
 	}
 	return nil
+}
+
+type permanentError struct{ error }
+
+func isRetryable(err error) bool {
+	var permanent permanentError
+	return !errors.As(err, &permanent)
+}
+
+func waitRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

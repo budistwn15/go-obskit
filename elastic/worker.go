@@ -2,17 +2,18 @@ package elastic
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 )
 
 func (m *Middleware) run() {
-	defer m.wg.Done()
+	defer close(m.done)
 	ticker := time.NewTicker(m.cfg.FlushInterval)
 	defer ticker.Stop()
 
@@ -21,7 +22,12 @@ func (m *Middleware) run() {
 		if len(batch) == 0 {
 			return
 		}
-		if err := m.ship(batch); err != nil {
+		err := m.ship(m.shipContext(), batch)
+		if errors.Is(err, context.Canceled) && m.closed.Load() {
+			err = m.ship(m.closeCtx, batch)
+		}
+		if err != nil {
+			m.failed.Add(uint64(len(batch)))
 			m.handleErr(err)
 		} else {
 			m.sent.Add(uint64(len(batch)))
@@ -32,6 +38,7 @@ func (m *Middleware) run() {
 	for {
 		select {
 		case <-m.stop:
+			<-m.enqueuesDone
 			for {
 				select {
 				case rec := <-m.queue:
@@ -55,7 +62,14 @@ func (m *Middleware) run() {
 	}
 }
 
-func (m *Middleware) ship(batch []slog.Record) error {
+func (m *Middleware) shipContext() context.Context {
+	if m.closed.Load() {
+		return m.closeCtx
+	}
+	return m.ctx
+}
+
+func (m *Middleware) ship(ctx context.Context, batch []slog.Record) error {
 	var body bytes.Buffer
 	indexName := m.currentIndexName(time.Now().UTC())
 	for _, rec := range batch {
@@ -74,16 +88,19 @@ func (m *Middleware) ship(batch []slog.Record) error {
 		body.Write(docJSON)
 		body.WriteByte('\n')
 	}
+	if m.cfg.MaxBatchBytes > 0 && body.Len() > m.cfg.MaxBatchBytes {
+		return fmt.Errorf("elastic batch exceeds %d bytes", m.cfg.MaxBatchBytes)
+	}
 
 	endpoint := m.cfg.Endpoint + "/_bulk"
 	var allErr error
 	for attempt := 0; attempt <= m.cfg.MaxRetries; attempt++ {
-		err := m.sendBulk(endpoint, body.Bytes())
+		err := m.sendBulk(ctx, endpoint, body.Bytes())
 		if err == nil {
 			return nil
 		}
 		allErr = joinErr(allErr, err)
-		if attempt == m.cfg.MaxRetries {
+		if attempt == m.cfg.MaxRetries || !isRetryable(err) {
 			break
 		}
 		m.retryErr(attempt+1, err)
@@ -91,7 +108,9 @@ func (m *Middleware) ship(batch []slog.Record) error {
 		if backoff > m.cfg.MaxBackoff {
 			backoff = m.cfg.MaxBackoff
 		}
-		time.Sleep(backoff)
+		if err := waitRetry(ctx, backoff); err != nil {
+			return errors.Join(allErr, err)
+		}
 	}
 	return allErr
 }
@@ -110,8 +129,8 @@ func (m *Middleware) currentIndexName(now time.Time) string {
 	return m.cfg.Index + "-" + now.Format(layout)
 }
 
-func (m *Middleware) sendBulk(endpoint string, payload []byte) error {
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+func (m *Middleware) sendBulk(ctx context.Context, endpoint string, payload []byte) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
@@ -130,12 +149,42 @@ func (m *Middleware) sendBulk(endpoint string, payload []byte) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 500 || resp.StatusCode == 429 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("bulk server status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		return fmt.Errorf("bulk server status=%d", resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("bulk rejected status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		return permanentError{fmt.Errorf("bulk rejected status=%d", resp.StatusCode)}
+	}
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+	var result struct {
+		Errors bool `json:"errors"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return permanentError{fmt.Errorf("bulk response invalid: %w", err)}
+	}
+	if result.Errors {
+		return permanentError{errors.New("bulk response contains failed items")}
 	}
 	return nil
+}
+
+type permanentError struct{ error }
+
+func isRetryable(err error) bool {
+	var permanent permanentError
+	return !errors.As(err, &permanent)
+}
+
+func waitRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

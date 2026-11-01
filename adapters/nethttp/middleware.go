@@ -1,14 +1,13 @@
 package nethttp
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/httplog"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/httplog"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func Middleware(log *slog.Logger, opts Options) func(http.Handler) http.Handler {
@@ -55,29 +54,45 @@ func Middleware(log *slog.Logger, opts Options) func(http.Handler) http.Handler 
 					return
 				}
 
-				requestMeta := requestMetaFromRequest(req, opts)
 				shouldCaptureReqBody := opts.CaptureRequestBody && anyLifecycleLog
-				bodyCapture := captureRequestBody(req, opts, shouldCaptureReqBody)
-				if bodyCapture.value != "" {
-					requestMeta.RequestBody = bodyCapture.value
-					requestMeta.RequestBodyTruncated = bodyCapture.truncated
+				var requestMeta httplog.RequestMeta
+				requestMetaReady := opts.LogRequestStart || shouldCaptureReqBody
+				if requestMetaReady {
+					requestMeta = requestMetaFromRequest(req, opts)
+					bodyCapture := captureRequestBody(req, opts, shouldCaptureReqBody)
+					if bodyCapture.value != "" {
+						requestMeta.RequestBody = bodyCapture.value
+						requestMeta.RequestBodyTruncated = bodyCapture.truncated
+					}
 				}
 
-				if opts.LogRequestStart && shouldLog(
-					sampler, opts.ShouldLogStart, "start", requestMeta, httplog.ResponseMeta{}, httplog.EventMeta{},
-					nil, opts.RecoverInternally,
-				) {
+				if opts.LogRequestStart && httplog.ShouldLog(sampler, opts.ShouldLogStart, httplog.DecisionMeta{
+					Event: "start", Request: requestMeta,
+				}, opts.RecoverInternally) {
 					event := httplog.BuildRequestStart(
 						requestMeta, eventMeta(0, opts.SlowRequestThreshold, correlationID, requestID, traceID, spanID),
 					)
-					logEvent(log, ctx, event, opts.RecoverInternally)
+					httplog.LogEvent(log, ctx, event, opts.RecoverInternally)
 				}
 
-				captureRespBody := opts.CaptureResponseBody && (opts.LogErrorBodies || opts.LogSuccessBodies)
+				captureRespBody := anyLifecycleLog && opts.CaptureResponseBody &&
+					(opts.LogErrorBodies || opts.LogSuccessBodies)
 				rw := newResponseWriter(w, captureRespBody, opts.MaxBodyBytes)
 				next.ServeHTTP(rw, req)
 
 				duration := httplog.Since(start)
+				isSlow := httplog.IsSlowRequest(duration, opts.SlowRequestThreshold)
+				if rw.status < 400 && opts.LogRequestComplete && opts.ShouldLogComplete == nil && !isSlow &&
+					!sampler.ShouldLog(httplog.DecisionMeta{
+						Event:     "complete",
+						Response:  httplog.ResponseMeta{StatusCode: rw.status},
+						EventMeta: httplog.EventMeta{Duration: duration, Slow: false},
+					}) {
+					return
+				}
+				if !requestMetaReady {
+					requestMeta = requestMetaFromRequest(req, opts)
+				}
 				responseMeta := responseMetaFromWriter(rw, opts)
 				shouldLogRespBody := (rw.status >= 400 && opts.LogErrorBodies) || (rw.status < 400 && opts.LogSuccessBodies)
 				if captureRespBody && shouldLogRespBody && rw.body.Len() > 0 {
@@ -102,58 +117,25 @@ func Middleware(log *slog.Logger, opts Options) func(http.Handler) http.Handler 
 					responseMeta.Headers = nil
 				}
 
-				if rw.status >= 500 && opts.LogRequestError && shouldLog(
-					sampler, opts.ShouldLogError, "error", requestMeta, responseMeta, evMeta, nil,
+				if rw.status >= 500 && opts.LogRequestError && httplog.ShouldLog(sampler, opts.ShouldLogError,
+					httplog.DecisionMeta{Event: "error", Request: requestMeta, Response: responseMeta, EventMeta: evMeta},
 					opts.RecoverInternally,
 				) {
 					event := httplog.BuildRequestError(requestMeta, responseMeta, evMeta)
-					logEvent(log, ctx, event, opts.RecoverInternally)
+					httplog.LogEvent(log, ctx, event, opts.RecoverInternally)
 					return
 				}
-				if opts.LogRequestComplete && shouldLog(
-					sampler, opts.ShouldLogComplete, "complete", requestMeta, responseMeta, evMeta, nil,
+				if opts.LogRequestComplete && (opts.ShouldLogComplete == nil || httplog.ShouldLog(
+					sampler, opts.ShouldLogComplete,
+					httplog.DecisionMeta{Event: "complete", Request: requestMeta, Response: responseMeta, EventMeta: evMeta},
 					opts.RecoverInternally,
-				) {
+				)) {
 					event := httplog.BuildRequestComplete(requestMeta, responseMeta, evMeta)
-					logEvent(log, ctx, event, opts.RecoverInternally)
+					httplog.LogEvent(log, ctx, event, opts.RecoverInternally)
 				}
 			},
 		)
 	}
-}
-
-func shouldLog(
-	sampler *httplog.SuccessSampler, hook httplog.DecisionHook, event string, req httplog.RequestMeta,
-	res httplog.ResponseMeta, ev httplog.EventMeta, err error, recoverInternally bool,
-) bool {
-	meta := httplog.DecisionMeta{
-		Event:     event,
-		Request:   req,
-		Response:  res,
-		EventMeta: ev,
-		Err:       err,
-	}
-	if !sampler.ShouldLog(meta) {
-		return false
-	}
-	if hook == nil {
-		return true
-	}
-	result, _ := httplog.SafeValue(
-		recoverInternally, true, func() bool {
-			return hook(meta)
-		},
-	)
-	return result
-}
-
-func logEvent(log *slog.Logger, ctx context.Context, event httplog.Event, recoverInternally bool) {
-	_, _ = httplog.SafeValue(
-		recoverInternally, 0, func() int {
-			log.LogAttrs(ctx, event.Level, event.Message, event.Attrs...)
-			return 0
-		},
-	)
 }
 
 func traceIDs(req *http.Request) (string, string) {

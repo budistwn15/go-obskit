@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/budistwn15/go-obskit/correlation"
+	"github.com/budistwn15/go-obskit/v2/correlation"
 )
 
 type contextKey string
@@ -23,11 +23,6 @@ func WithLogger(ctx context.Context, l *slog.Logger) context.Context {
 		return ctx
 	}
 	return context.WithValue(ctx, loggerKey, l)
-}
-
-// WithContext is an alias of WithLogger for ergonomics in application code.
-func WithContext(ctx context.Context, l *slog.Logger) context.Context {
-	return WithLogger(ctx, l)
 }
 
 func FromContext(ctx context.Context, fallback *slog.Logger) *slog.Logger {

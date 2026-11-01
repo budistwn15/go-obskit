@@ -66,7 +66,7 @@ func FillTargetFromRequest(meta *RequestMeta, req *http.Request) {
 func parseUserAgent(ua string) (name, kind, device string) {
 	u := strings.ToLower(strings.TrimSpace(ua))
 	if u == "" {
-		return "", "unknown", "unknown"
+		return "", "", ""
 	}
 	device = "desktop"
 	if strings.Contains(u, "mobile") || strings.Contains(u, "android") || strings.Contains(u, "iphone") {

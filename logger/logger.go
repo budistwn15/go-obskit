@@ -4,11 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"time"
 )
 
 func New(cfg Config) *slog.Logger {
 	cfg = normalizeConfig(cfg)
 
+	// shortcut: slog's built-in keys preserve zero-allocation stdout; rename only with a benchmarked zero-allocation encoder.
 	opts := &slog.HandlerOptions{
 		Level:     ParseLevel(cfg.Level),
 		AddSource: cfg.AddSource,
@@ -31,16 +33,25 @@ func New(cfg Config) *slog.Logger {
 		instanceID = os.Getenv("HOSTNAME")
 	}
 
-	l := slog.New(newContextHandler(newSafeHandler(baseHandler))).With(
-		slog.String(FieldServiceName, cfg.ServiceName),
-		slog.String(FieldServiceVersion, cfg.ServiceVersion),
-		slog.String(FieldEnvironment, cfg.Environment),
-		slog.String(FieldSchemaVersion, cfg.SchemaVersion),
-		slog.String(FieldHost, host),
-		slog.String(FieldInstanceID, instanceID),
-	)
-
+	l := slog.New(newContextHandler(newSafeHandler(baseHandler)))
+	attrs := make([]any, 0, 6)
+	attrs = appendStringAttr(attrs, FieldServiceName, cfg.ServiceName)
+	attrs = appendStringAttr(attrs, FieldServiceVersion, cfg.ServiceVersion)
+	attrs = appendStringAttr(attrs, FieldEnvironment, cfg.Environment)
+	attrs = appendStringAttr(attrs, FieldSchemaVersion, cfg.SchemaVersion)
+	attrs = appendStringAttr(attrs, FieldHost, host)
+	attrs = appendStringAttr(attrs, FieldInstanceID, instanceID)
+	if len(attrs) > 0 {
+		l = l.With(attrs...)
+	}
 	return l
+}
+
+func appendStringAttr(attrs []any, key, value string) []any {
+	if value == "" {
+		return attrs
+	}
+	return append(attrs, slog.String(key, value))
 }
 
 func applyMiddlewares(base slog.Handler, mws []HandlerMiddleware) slog.Handler {
@@ -74,11 +85,6 @@ func With(l *slog.Logger, attrs ...slog.Attr) *slog.Logger {
 	return l.With(args...)
 }
 
-// WithCommon is an alias of With for readable shared-field enrichment.
-func WithCommon(l *slog.Logger, attrs ...slog.Attr) *slog.Logger {
-	return With(l, attrs...)
-}
-
 type contextHandler struct {
 	next slog.Handler
 }
@@ -106,6 +112,9 @@ func (h *contextHandler) Handle(ctx context.Context, record slog.Record) error {
 		if meta.SpanID != "" {
 			record.AddAttrs(slog.String(FieldSpanID, meta.SpanID))
 		}
+		if meta.TransactionID != "" {
+			record.AddAttrs(slog.String(FieldTransactionID, meta.TransactionID))
+		}
 		if meta.Layer != "" {
 			record.AddAttrs(slog.String(FieldLayer, meta.Layer))
 		}
@@ -116,7 +125,7 @@ func (h *contextHandler) Handle(ctx context.Context, record slog.Record) error {
 			record.AddAttrs(slog.String(FieldOperation, meta.Operation))
 		}
 		if meta.DurationMS > 0 {
-			record.AddAttrs(slog.Int64(FieldDurationMS, meta.DurationMS))
+			record.AddAttrs(slog.Int64(FieldDurationMS, meta.DurationMS*int64(time.Millisecond)))
 		}
 	}
 	if correlationID := CorrelationID(ctx); correlationID != "" && (meta.CorrelationID == "") {
@@ -162,12 +171,26 @@ func (h *safeHandler) Handle(ctx context.Context, record slog.Record) (err error
 	return h.next.Handle(ctx, record)
 }
 
-func (h *safeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+func (h *safeHandler) WithAttrs(attrs []slog.Attr) (out slog.Handler) {
+	out = h
+	if h == nil || h.next == nil {
+		return out
+	}
 	defer func() { _ = recover() }()
-	return &safeHandler{next: h.next.WithAttrs(attrs)}
+	if next := h.next.WithAttrs(attrs); next != nil {
+		out = &safeHandler{next: next}
+	}
+	return out
 }
 
-func (h *safeHandler) WithGroup(name string) slog.Handler {
+func (h *safeHandler) WithGroup(name string) (out slog.Handler) {
+	out = h
+	if h == nil || h.next == nil {
+		return out
+	}
 	defer func() { _ = recover() }()
-	return &safeHandler{next: h.next.WithGroup(name)}
+	if next := h.next.WithGroup(name); next != nil {
+		out = &safeHandler{next: next}
+	}
+	return out
 }

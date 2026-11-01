@@ -1,3 +1,4 @@
+// Package logger builds structured slog loggers with context metadata and redaction.
 package logger
 
 import (

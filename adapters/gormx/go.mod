@@ -1,9 +1,9 @@
-module github.com/budistwn15/go-obskit/adapters/gormx
+module github.com/budistwn15/go-obskit/adapters/gormx/v2
 
-go 1.21
+go 1.26
 
 require (
-	github.com/budistwn15/go-obskit v0.0.0
+	github.com/budistwn15/go-obskit/v2 v2.0.0
 	gorm.io/gorm v1.31.1
 )
 
@@ -13,4 +13,4 @@ require (
 	golang.org/x/text v0.20.0 // indirect
 )
 
-replace github.com/budistwn15/go-obskit => ../..
+replace github.com/budistwn15/go-obskit/v2 => ../..

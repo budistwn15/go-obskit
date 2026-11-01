@@ -1,3 +1,4 @@
+// Package httplog defines shared HTTP logging metadata, events, and capture policy.
 package httplog
 
 import "time"
@@ -45,6 +46,9 @@ type ResponseMeta struct {
 }
 
 type EventMeta struct {
+	Category string
+	Outcome  string
+
 	CorrelationID string
 	RequestID     string
 	TraceID       string

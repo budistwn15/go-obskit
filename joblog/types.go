@@ -1,3 +1,4 @@
+// Package joblog records job, scheduler, and worker lifecycle events.
 package joblog
 
 import (

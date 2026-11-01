@@ -3,12 +3,13 @@ package ginx
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,10 +41,10 @@ func TestMiddleware_GinLifecycleRouteAndCorrelation(t *testing.T) {
 			Output:      &buf,
 		},
 	)
-	
+
 	opts := DefaultOptions()
 	opts.CorrelationHeader = "X-Correlation-ID"
-	
+
 	r := gin.New()
 	r.Use(Middleware(log, opts))
 	r.GET(
@@ -51,19 +52,19 @@ func TestMiddleware_GinLifecycleRouteAndCorrelation(t *testing.T) {
 			c.JSON(http.StatusOK, gin.H{"ok": true})
 		},
 	)
-	
+
 	req := httptest.NewRequest(http.MethodGet, "/users/123", nil)
 	req.Header.Set("X-Correlation-ID", "corr-gin")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
-	
+
 	if rec.Code != http.StatusOK {
 		t.Fatalf("request flow broken")
 	}
 	if rec.Header().Get("X-Correlation-ID") != "corr-gin" {
 		t.Fatalf("correlation header not propagated")
 	}
-	
+
 	logs := parseLines(t, buf.String())
 	if len(logs) == 0 {
 		t.Fatalf("expected logs")
@@ -72,4 +73,39 @@ func TestMiddleware_GinLifecycleRouteAndCorrelation(t *testing.T) {
 	if last["http.route"] != "/users/:id" {
 		t.Fatalf("expected route capture, got=%v", last["http.route"])
 	}
+}
+
+func TestMiddleware_PreservesBodyWhenCaptureReadReturnsDataAndError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	opts := DefaultOptions()
+	opts.CaptureRequestBody = true
+	received := ""
+	r := gin.New()
+	r.Use(Middleware(nil, opts))
+	r.POST("/", func(c *gin.Context) {
+		body, _ := io.ReadAll(c.Request.Body)
+		received = string(body)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = io.NopCloser(&partialErrorReader{data: []byte(`{"name":"john"}`)})
+
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if received != `{"name":"john"}` {
+		t.Fatalf("handler body = %q, want complete original body", received)
+	}
+}
+
+type partialErrorReader struct {
+	data []byte
+	done bool
+}
+
+func (r *partialErrorReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+	r.done = true
+	return copy(p, r.data), io.ErrUnexpectedEOF
 }

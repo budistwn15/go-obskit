@@ -1,0 +1,11 @@
+{
+  "event.action": "http.request.complete",
+  "event.category": "web",
+  "event.duration": 12000000,
+  "event.outcome": "success",
+  "http.request.method": "GET",
+  "url.path": "/health",
+  "http.response.status_code": 200,
+  "http.response.body.bytes": 0,
+  "correlation.id": "corr-1"
+}

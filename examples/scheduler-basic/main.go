@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/budistwn15/go-obskit/joblog"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/joblog"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func main() {
@@ -16,7 +16,7 @@ func main() {
 			Level:       logger.LevelInfo,
 		},
 	)
-	
+
 	ctx := context.Background()
 	ctx, run := joblog.Start(
 		ctx, log, joblog.Meta{
@@ -26,12 +26,12 @@ func main() {
 			Operation:   "daily_report",
 		},
 	)
-	
+
 	run.AddProcessed(100)
 	run.AddSucceeded(99)
 	run.AddFailed(1)
 	run.Retry(joblog.RetryMeta{Attempt: 2, MaxAttempts: 3, Reason: "temporary timeout", Delay: 2 * time.Second})
 	run.End(nil)
-	
+
 	_ = ctx
 }

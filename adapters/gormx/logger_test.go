@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/logger"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
@@ -30,6 +31,18 @@ func parseLines(t *testing.T, raw string) []map[string]any {
 		out = append(out, m)
 	}
 	return out
+}
+
+func TestFastSuccessDefaultSkipsSQLCallback(t *testing.T) {
+	gl := New(logger.New(logger.Config{Output: io.Discard}), DefaultOptions()).(gormlogger.Interface)
+	called := false
+	gl.Trace(context.Background(), time.Now(), func() (string, int64) {
+		called = true
+		return "SELECT * FROM users", 1
+	}, nil)
+	if called {
+		t.Fatal("fast success that cannot be logged must not evaluate SQL")
+	}
 }
 
 func TestSlowQueryDetection(t *testing.T) {
@@ -65,16 +78,10 @@ func TestSlowQueryDetection(t *testing.T) {
 		t.Fatalf("expected query type SELECT, got=%v", last[FieldDBQueryType])
 	}
 	if last[FieldDBTable] != "users" {
-		t.Fatalf("expected db.table users, got=%v", last[FieldDBTable])
+		t.Fatalf("expected db.collection.name users, got=%v", last[FieldDBTable])
 	}
-	if slow, ok := last["slow"].(bool); !ok || !slow {
-		t.Fatalf("expected slow=true, got=%v", last["slow"])
-	}
-	if _, ok := last["slow_threshold_ms"]; !ok {
-		t.Fatalf("expected slow_threshold_ms field")
-	}
-	if _, ok := last["threshold_ms"]; !ok {
-		t.Fatalf("expected threshold_ms field")
+	if slow, ok := last["event.slow"].(bool); !ok || !slow {
+		t.Fatalf("expected event.slow=true, got=%v", last["event.slow"])
 	}
 }
 
@@ -106,10 +113,7 @@ func TestErrorLogging(t *testing.T) {
 		t.Fatalf("expected query type SELECT")
 	}
 	if last[FieldDBTable] != "invoices" {
-		t.Fatalf("expected db.table invoices, got=%v", last[FieldDBTable])
-	}
-	if _, ok := last[FieldDBFingerprint].(string); !ok {
-		t.Fatalf("expected db.fingerprint in error log")
+		t.Fatalf("expected db.collection.name invoices, got=%v", last[FieldDBTable])
 	}
 	if last[FieldDBSystem] != "sql" {
 		t.Fatalf("expected default db.system=sql, got=%v", last[FieldDBSystem])
@@ -138,42 +142,6 @@ func TestDBSystemConfiguredFromOptionsAndContext(t *testing.T) {
 	last := logs[len(logs)-1]
 	if last[FieldDBSystem] != "mysql" {
 		t.Fatalf("expected ctx db.system override=mysql, got=%v", last[FieldDBSystem])
-	}
-}
-
-func TestWhereExtraction(t *testing.T) {
-	var buf bytes.Buffer
-	slog := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
-	gl := New(
-		slog, Options{
-			Level:                      gormlogger.Error,
-			LogSQL:                     true,
-			IncludeWhereDetails:        true,
-			RedactWhereSensitiveValues: true,
-		},
-	).(gormlogger.Interface)
-
-	gl.Trace(
-		context.Background(), time.Now(), func() (string, int64) {
-			return "SELECT * FROM users WHERE id = 42 AND email = 'john@example.com' AND status = 'active'", -1
-		}, errors.New("db down"),
-	)
-
-	logs := parseLines(t, buf.String())
-	last := logs[len(logs)-1]
-	cols, ok := last[FieldDBWhereColumns].([]any)
-	if !ok || len(cols) == 0 {
-		t.Fatalf("expected db.where.columns")
-	}
-	values, ok := last[FieldDBWhereValues].(map[string]any)
-	if !ok {
-		t.Fatalf("expected db.where.values")
-	}
-	if values["id"] != "42" {
-		t.Fatalf("expected id value 42, got=%v", values["id"])
-	}
-	if values["email"] != "***redacted***" {
-		t.Fatalf("expected email redacted, got=%v", values["email"])
 	}
 }
 
@@ -363,7 +331,7 @@ func TestSuccessLogsQueryWithLogSQLOnSuccess(t *testing.T) {
 		t.Fatalf("expected db.statement on success when LogSQLOnSuccess=true")
 	}
 	if last[FieldDBResultStatus] != "success" {
-		t.Fatalf("expected db.result_status=success")
+		t.Fatalf("expected event.outcome=success")
 	}
 }
 
@@ -386,41 +354,6 @@ func TestTracingOptionsPreset(t *testing.T) {
 	}
 	if opts.ErrorDetailFunc == nil {
 		t.Fatalf("tracing preset should include default error detail func")
-	}
-}
-
-func TestFingerprintStableAcrossDifferentLiteralValues(t *testing.T) {
-	var buf bytes.Buffer
-	slog := logger.New(logger.Config{ServiceName: "svc", Environment: "production", Output: &buf})
-	gl := New(
-		slog, Options{
-			Level:      gormlogger.Error,
-			LogSuccess: false,
-		},
-	).(gormlogger.Interface)
-
-	gl.Trace(
-		context.Background(), time.Now(), func() (string, int64) {
-			return "SELECT * FROM users WHERE id=1 AND status='active'", 1
-		}, errors.New("x1"),
-	)
-	gl.Trace(
-		context.Background(), time.Now(), func() (string, int64) {
-			return "SELECT * FROM users WHERE id=999 AND status='inactive'", 1
-		}, errors.New("x2"),
-	)
-
-	logs := parseLines(t, buf.String())
-	if len(logs) < 2 {
-		t.Fatalf("expected two logs")
-	}
-	fp1, _ := logs[len(logs)-2][FieldDBFingerprint].(string)
-	fp2, _ := logs[len(logs)-1][FieldDBFingerprint].(string)
-	if fp1 == "" || fp2 == "" {
-		t.Fatalf("expected db.fingerprint on both logs")
-	}
-	if fp1 != fp2 {
-		t.Fatalf("expected same fingerprint for same query shape, got %s vs %s", fp1, fp2)
 	}
 }
 

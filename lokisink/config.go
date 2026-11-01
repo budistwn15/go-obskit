@@ -1,3 +1,4 @@
+// Package lokisink ships slog records asynchronously to Grafana Loki.
 package lokisink
 
 import (
@@ -7,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/budistwn15/go-obskit/v2/internal/slogsnapshot"
 )
 
 type Config struct {
@@ -22,6 +25,8 @@ type Config struct {
 	Timeout          time.Duration
 	QueueSize        int
 	BatchSize        int
+	MaxRecordBytes   int
+	MaxBatchBytes    int
 	FlushInterval    time.Duration
 	BlockOnQueueFull bool
 
@@ -47,6 +52,8 @@ func DefaultConfig() Config {
 		Timeout:               2 * time.Second,
 		QueueSize:             2048,
 		BatchSize:             200,
+		MaxRecordBytes:        64 * 1024,
+		MaxBatchBytes:         1 * 1024 * 1024,
 		FlushInterval:         1 * time.Second,
 		BlockOnQueueFull:      false,
 		MaxRetries:            3,
@@ -71,6 +78,12 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = d.BatchSize
 	}
+	if cfg.MaxRecordBytes <= 0 {
+		cfg.MaxRecordBytes = d.MaxRecordBytes
+	}
+	if cfg.MaxBatchBytes <= 0 {
+		cfg.MaxBatchBytes = d.MaxBatchBytes
+	}
 	if cfg.FlushInterval <= 0 {
 		cfg.FlushInterval = d.FlushInterval
 	}
@@ -90,15 +103,44 @@ func normalizeConfig(cfg Config) Config {
 		cfg.ConnectionLogLevel = d.ConnectionLogLevel
 	}
 	if cfg.Labels == nil {
-		cfg.Labels = d.Labels
+		cfg.Labels = cloneStringMap(d.Labels)
+	} else {
+		cfg.Labels = cloneStringMap(cfg.Labels)
 	}
+	cfg.StaticFields = cloneAnyMap(cfg.StaticFields)
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: cfg.Timeout}
-	} else if cfg.HTTPClient.Timeout <= 0 {
-		cfg.HTTPClient.Timeout = cfg.Timeout
+	} else {
+		client := *cfg.HTTPClient
+		if client.Timeout <= 0 {
+			client.Timeout = cfg.Timeout
+		}
+		cfg.HTTPClient = &client
 	}
 	cfg.RecoverInternally = true
 	return cfg
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for k, v := range input {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneAnyMap(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for k, v := range input {
+		out[k] = slogsnapshot.Value(v)
+	}
+	return out
 }
 
 func (c Config) active() bool {
