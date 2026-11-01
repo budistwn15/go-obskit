@@ -59,18 +59,20 @@ func TestEnabledWithoutEndpoint_NoPanicAndNoCrash(t *testing.T) {
 }
 
 func TestCanonicalElasticFields(t *testing.T) {
-	var hitAuth string
-	var hitBody string
+	type request struct {
+		auth string
+		body string
+	}
+	received := make(chan request, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"name":"es"}`))
 			return
 		}
-		hitAuth = r.Header.Get("Authorization")
 		b, _ := io.ReadAll(r.Body)
 		_ = r.Body.Close()
-		hitBody = string(b)
+		received <- request{auth: r.Header.Get("Authorization"), body: string(b)}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"errors":false}`))
 	}))
@@ -87,9 +89,9 @@ func TestCanonicalElasticFields(t *testing.T) {
 	cfg.MaxRetries = 0
 	cfg.IndexTimestampSuffix = true
 	cfg.IndexTimestampLayout = "20060102"
+	cfg.ConnectionLogToStdout = false
 
 	m := NewMiddleware(cfg)
-	defer func() { _ = m.Close(context.Background()) }()
 
 	var buf bytes.Buffer
 	log := logger.New(logger.Config{
@@ -99,16 +101,24 @@ func TestCanonicalElasticFields(t *testing.T) {
 		Middlewares: []logger.HandlerMiddleware{m.LoggerMiddleware()},
 	})
 	log.Info("direct fields")
-	time.Sleep(80 * time.Millisecond)
+	var hit request
+	select {
+	case hit = <-received:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected elastic request")
+	}
+	if err := m.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 
 	if m.Stats().Sent == 0 {
 		t.Fatalf("expected sent log via direct elastic fields")
 	}
-	if !strings.HasPrefix(hitAuth, "Basic ") {
+	if !strings.HasPrefix(hit.auth, "Basic ") {
 		t.Fatalf("expected basic auth header")
 	}
-	if !strings.Contains(hitBody, "direct-index-") {
-		t.Fatalf("expected timestamp suffixed index in bulk action, body=%s", hitBody)
+	if !strings.Contains(hit.body, "direct-index-") {
+		t.Fatalf("expected timestamp suffixed index in bulk action, body=%s", hit.body)
 	}
 }
 

@@ -99,13 +99,15 @@ func TestConfigOwnership(t *testing.T) {
 }
 
 func TestSendLokiPushPayload(t *testing.T) {
-	var hitBody []byte
-	var hitPath string
+	type request struct {
+		body []byte
+		path string
+	}
+	received := make(chan request, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hitPath = r.URL.Path
 		b, _ := io.ReadAll(r.Body)
 		_ = r.Body.Close()
-		hitBody = append([]byte(nil), b...)
+		received <- request{body: b, path: r.URL.Path}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer ts.Close()
@@ -128,21 +130,17 @@ func TestSendLokiPushPayload(t *testing.T) {
 	})
 	log.Info("loki event")
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(hitBody) > 0 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	var hit request
+	select {
+	case hit = <-received:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected loki payload")
 	}
-	if len(hitBody) == 0 {
-		t.Fatalf("expected loki payload")
-	}
-	if hitPath != "/loki/api/v1/push" {
-		t.Fatalf("unexpected path: %s", hitPath)
+	if hit.path != "/loki/api/v1/push" {
+		t.Fatalf("unexpected path: %s", hit.path)
 	}
 	var payload map[string]any
-	if err := json.Unmarshal(hitBody, &payload); err != nil {
+	if err := json.Unmarshal(hit.body, &payload); err != nil {
 		t.Fatalf("invalid payload json: %v", err)
 	}
 	streams, ok := payload["streams"].([]any)

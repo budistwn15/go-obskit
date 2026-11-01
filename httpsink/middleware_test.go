@@ -32,11 +32,11 @@ func TestDisabledSinkDoesNotBreakLogging(t *testing.T) {
 }
 
 func TestSendNDJSON(t *testing.T) {
-	var got string
+	received := make(chan string, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		_ = r.Body.Close()
-		got = string(b)
+		received <- string(b)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer ts.Close()
@@ -58,14 +58,14 @@ func TestSendNDJSON(t *testing.T) {
 	})
 	log.LogAttrs(context.Background(), slog.LevelInfo, "ndjson event", slog.String("event", "test"))
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if strings.Contains(got, "ndjson event") {
-			return
+	select {
+	case got := <-received:
+		if !strings.Contains(got, "ndjson event") {
+			t.Fatalf("sink payload not received, got=%q", got)
 		}
-		time.Sleep(10 * time.Millisecond)
+	case <-time.After(2 * time.Second):
+		t.Fatal("sink payload not received")
 	}
-	t.Fatalf("sink payload not received, got=%q", got)
 }
 
 func TestCloseCancelsRetryAndDropsFurtherRecords(t *testing.T) {
