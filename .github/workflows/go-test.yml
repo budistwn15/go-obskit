@@ -68,7 +68,15 @@ jobs:
       - name: Run race tests
         env:
           CGO_ENABLED: "1"
-        run: go test -race ./...
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -race ./... 2>&1 | tee race.log
+          status=${PIPESTATUS[0]}
+          printf '```text\n' >> "$GITHUB_STEP_SUMMARY"
+          cat race.log >> "$GITHUB_STEP_SUMMARY"
+          printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   soak-smoke:
     name: Soak smoke
