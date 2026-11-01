@@ -70,6 +70,7 @@ jobs:
           CGO_ENABLED: "1"
         shell: bash
         run: |
+          set +e
           set -o pipefail
           go test -race ./... 2>&1 | tee race.log
           status=${PIPESTATUS[0]}
