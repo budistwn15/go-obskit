@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/elastic"
-	"github.com/budistwn15/go-obskit/httpsink"
-	"github.com/budistwn15/go-obskit/logger"
-	"github.com/budistwn15/go-obskit/lokisink"
+	"github.com/budistwn15/go-obskit/v2/elastic"
+	"github.com/budistwn15/go-obskit/v2/httpsink"
+	"github.com/budistwn15/go-obskit/v2/logger"
+	"github.com/budistwn15/go-obskit/v2/lokisink"
 )
 
 func TestDirectProvidersRecoverAfterTransientFailure(t *testing.T) {

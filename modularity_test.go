@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/errorsx"
-	"github.com/budistwn15/go-obskit/joblog"
-	"github.com/budistwn15/go-obskit/logger"
-	"github.com/budistwn15/go-obskit/outbound"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/errorsx"
+	"github.com/budistwn15/go-obskit/v2/joblog"
+	"github.com/budistwn15/go-obskit/v2/logger"
+	"github.com/budistwn15/go-obskit/v2/outbound"
 )
 
 func TestCoreModularAdoptionWithoutAdapters(t *testing.T) {

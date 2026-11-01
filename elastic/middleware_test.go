@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func TestDisabledMiddleware_StdoutStillWorks(t *testing.T) {
@@ -169,6 +169,27 @@ func TestRetryAndSendSuccess(t *testing.T) {
 	}
 	if st.Failed != 0 {
 		t.Fatalf("retry success must not count as failed, stats=%+v", st)
+	}
+}
+
+func TestBulkItemFailureIsNotCountedAsSent(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errors":true,"items":[{"index":{"status":400}}]}`))
+	}))
+	defer ts.Close()
+
+	m := NewMiddleware(Config{
+		Enabled: true, Endpoint: ts.URL, Index: "logs", BatchSize: 1, MaxRetries: 3,
+		RetryBackoff: time.Millisecond, ConnectionLogToStdout: false,
+	})
+	m.enqueue(slog.NewRecord(time.Now(), slog.LevelInfo, "partial failure", 0))
+	if err := m.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	stats := m.Stats()
+	if stats.Sent != 0 || stats.Failed != 1 || stats.Retried != 0 {
+		t.Fatalf("partial failure stats = %+v", stats)
 	}
 }
 

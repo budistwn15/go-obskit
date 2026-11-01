@@ -1,15 +1,17 @@
 module github.com/budistwn15/go-obskit/examples
 
-go 1.26
+go 1.26.0
 
 require (
-	github.com/budistwn15/go-obskit v0.0.0
-	github.com/budistwn15/go-obskit/adapters/fiberx v0.0.0
-	github.com/budistwn15/go-obskit/adapters/ginx v0.0.0
-	github.com/budistwn15/go-obskit/adapters/gormx v0.0.0
-	github.com/budistwn15/go-obskit/adapters/nethttp v0.0.0
+	github.com/budistwn15/go-obskit/v2 v2.0.0
+	github.com/budistwn15/go-obskit/adapters/fiberx/v2 v2.0.0
+	github.com/budistwn15/go-obskit/adapters/ginx/v2 v2.0.0
+	github.com/budistwn15/go-obskit/adapters/gormx/v2 v2.0.0
+	github.com/budistwn15/go-obskit/adapters/grpcx/v2 v2.0.0
+	github.com/budistwn15/go-obskit/adapters/nethttp/v2 v2.0.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/gofiber/fiber/v2 v2.52.12
+	google.golang.org/grpc v1.85.0
 	gorm.io/gorm v1.31.1
 )
 
@@ -49,19 +51,22 @@ require (
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 )
 
-replace github.com/budistwn15/go-obskit => ..
+replace github.com/budistwn15/go-obskit/v2 => ..
 
-replace github.com/budistwn15/go-obskit/adapters/nethttp => ../adapters/nethttp
+replace github.com/budistwn15/go-obskit/adapters/nethttp/v2 => ../adapters/nethttp
 
-replace github.com/budistwn15/go-obskit/adapters/ginx => ../adapters/ginx
+replace github.com/budistwn15/go-obskit/adapters/ginx/v2 => ../adapters/ginx
 
-replace github.com/budistwn15/go-obskit/adapters/fiberx => ../adapters/fiberx
+replace github.com/budistwn15/go-obskit/adapters/fiberx/v2 => ../adapters/fiberx
 
-replace github.com/budistwn15/go-obskit/adapters/gormx => ../adapters/gormx
+replace github.com/budistwn15/go-obskit/adapters/gormx/v2 => ../adapters/gormx
+
+replace github.com/budistwn15/go-obskit/adapters/grpcx/v2 => ../adapters/grpcx

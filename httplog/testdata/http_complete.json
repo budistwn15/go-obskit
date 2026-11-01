@@ -1,12 +1,11 @@
 {
   "event.action": "http.request.complete",
-  "http.method": "GET",
-  "http.path": "/health",
-  "agent.type": "unknown",
-  "agent.device": "unknown",
-  "http.status_code": 200,
-  "http.response.size_bytes": 0,
-  "correlation.id": "corr-1",
-  "duration_ms": 12,
-  "slow": false
+  "event.category": "web",
+  "event.duration": 12000000,
+  "event.outcome": "success",
+  "http.request.method": "GET",
+  "url.path": "/health",
+  "http.response.status_code": 200,
+  "http.response.body.bytes": 0,
+  "correlation.id": "corr-1"
 }

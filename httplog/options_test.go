@@ -13,8 +13,8 @@ func TestDefaultOptions(t *testing.T) {
 	if opts.MaxBodyBytes <= 0 {
 		t.Fatalf("max body bytes should be > 0")
 	}
-	if opts.CaptureRequestBody || opts.CaptureResponseBody {
-		t.Fatalf("body capture must be disabled by default")
+	if opts.CaptureQuery || opts.CaptureHeaders || opts.CaptureRequestBody || opts.CaptureResponseBody {
+		t.Fatalf("detailed capture must be disabled by default")
 	}
 	if !opts.LogRequestComplete || !opts.LogRequestError || opts.LogRequestStart {
 		t.Fatalf("unexpected default request event toggles")
@@ -37,5 +37,12 @@ func TestForensicOptions(t *testing.T) {
 	}
 	if opts.MaxBodyBytes < 4096 {
 		t.Fatalf("forensic options should keep bounded body capture with practical size")
+	}
+}
+
+func TestSafeURLRemovesSensitiveParts(t *testing.T) {
+	got := SafeURL("https://user:pass@example.com/callback?code=secret#token")
+	if got != "https://example.com/callback" {
+		t.Fatalf("safe URL = %q", got)
 	}
 }

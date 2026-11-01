@@ -1,9 +1,9 @@
-module github.com/budistwn15/go-obskit/adapters/ginx
+module github.com/budistwn15/go-obskit/adapters/ginx/v2
 
 go 1.26
 
 require (
-	github.com/budistwn15/go-obskit v0.0.0
+	github.com/budistwn15/go-obskit/v2 v2.0.0
 	github.com/gin-gonic/gin v1.12.0
 )
 
@@ -39,4 +39,4 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 )
 
-replace github.com/budistwn15/go-obskit => ../..
+replace github.com/budistwn15/go-obskit/v2 => ../..

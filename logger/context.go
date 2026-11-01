@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/budistwn15/go-obskit/correlation"
+	"github.com/budistwn15/go-obskit/v2/correlation"
 )
 
 type contextKey string

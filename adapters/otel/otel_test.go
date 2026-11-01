@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	obskit "github.com/budistwn15/go-obskit"
-	"github.com/budistwn15/go-obskit/logger"
+	obskit "github.com/budistwn15/go-obskit/v2"
+	"github.com/budistwn15/go-obskit/v2/logger"
 	"go.opentelemetry.io/otel/trace"
 )
 

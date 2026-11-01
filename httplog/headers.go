@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/budistwn15/go-obskit/redact"
+	"github.com/budistwn15/go-obskit/v2/redact"
 )
 
 var defaultSensitiveHeaderSet = redact.DefaultRules().HeaderKeys
@@ -13,7 +13,7 @@ func FilterHeaders(headers map[string][]string, allowlist []string, denylist []s
 	if len(headers) == 0 {
 		return map[string]any{}
 	}
-	
+
 	var allow map[string]struct{}
 	if len(allowlist) > 0 {
 		allow = toSet(allowlist)
@@ -23,7 +23,7 @@ func FilterHeaders(headers map[string][]string, allowlist []string, denylist []s
 		deny = toSet(denylist)
 	}
 	hasAllowlist := len(allow) > 0
-	
+
 	out := make(map[string]any)
 	for k, vals := range headers {
 		ck := http.CanonicalHeaderKey(k)
@@ -33,7 +33,7 @@ func FilterHeaders(headers map[string][]string, allowlist []string, denylist []s
 				continue
 			}
 		}
-		
+
 		if _, ok := defaultSensitiveHeaderSet[lk]; ok {
 			out[ck] = redact.RedactedValue
 			continue

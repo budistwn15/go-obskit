@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/budistwn15/go-obskit/v2/internal/slogsnapshot"
 )
 
 type PayloadFormat string
@@ -31,6 +33,8 @@ type Config struct {
 	Timeout          time.Duration
 	QueueSize        int
 	BatchSize        int
+	MaxRecordBytes   int
+	MaxBatchBytes    int
 	FlushInterval    time.Duration
 	BlockOnQueueFull bool
 
@@ -56,6 +60,8 @@ func DefaultConfig() Config {
 		Timeout:               2 * time.Second,
 		QueueSize:             2048,
 		BatchSize:             200,
+		MaxRecordBytes:        64 * 1024,
+		MaxBatchBytes:         1 * 1024 * 1024,
 		FlushInterval:         1 * time.Second,
 		BlockOnQueueFull:      false,
 		MaxRetries:            3,
@@ -82,6 +88,12 @@ func normalizeConfig(cfg Config) Config {
 	}
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = d.BatchSize
+	}
+	if cfg.MaxRecordBytes <= 0 {
+		cfg.MaxRecordBytes = d.MaxRecordBytes
+	}
+	if cfg.MaxBatchBytes <= 0 {
+		cfg.MaxBatchBytes = d.MaxBatchBytes
 	}
 	if cfg.FlushInterval <= 0 {
 		cfg.FlushInterval = d.FlushInterval
@@ -137,7 +149,7 @@ func cloneAnyMap(input map[string]any) map[string]any {
 	}
 	out := make(map[string]any, len(input))
 	for k, v := range input {
-		out[k] = v
+		out[k] = slogsnapshot.Value(v)
 	}
 	return out
 }

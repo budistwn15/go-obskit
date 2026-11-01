@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/budistwn15/go-obskit/httplog"
+	"github.com/budistwn15/go-obskit/v2/httplog"
 )
 
 type requestBodyCapture struct {
@@ -55,7 +55,7 @@ func requestMetaFromRequest(req *http.Request, opts Options) httplog.RequestMeta
 		Scheme: requestScheme(req),
 		Host:   req.Host,
 		Path:   req.URL.Path,
-		URL:    req.URL.String(),
+		URL:    httplog.SafeURL(req.URL.String()),
 	}
 	httplog.FillSourceFromRemoteAddr(&meta, req.RemoteAddr)
 	httplog.FillTargetFromRequest(&meta, req)

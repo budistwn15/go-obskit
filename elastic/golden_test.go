@@ -13,8 +13,8 @@ import (
 func TestRecordToDocument_GoldenSnapshot(t *testing.T) {
 	rec := slog.NewRecord(time.Date(2026, 3, 27, 10, 0, 0, 0, time.UTC), slog.LevelInfo, "golden event", 0)
 	rec.AddAttrs(
-		slog.String("http.request.body", `{"status":"ok","data":{"email":"a@b.c"}}`),
-		slog.Int("http.status_code", 200),
+		slog.String("http.request.body.content", `{"status":"ok","data":{"email":"a@b.c"}}`),
+		slog.Int("http.response.status_code", 200),
 		slog.String("db.statement", "SELECT * FROM users WHERE id=1"),
 		slog.String("custom.payload", `{"tenant_id":"t-1"}`),
 	)

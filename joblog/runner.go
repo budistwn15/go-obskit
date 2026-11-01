@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/logger"
-	"github.com/budistwn15/go-obskit/sampling"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/logger"
+	"github.com/budistwn15/go-obskit/v2/sampling"
 )
 
 var jobCompleteSampleCounter atomic.Uint64
@@ -25,7 +25,8 @@ func Start(ctx context.Context, log *slog.Logger, meta Meta, opts ...Options) (c
 	if len(opts) > 0 {
 		opt = opts[0]
 	}
-	
+	opt.RecoverInternally = true
+
 	runID := "job_" + correlation.Generate()
 	ctx = WithJobRunID(ctx, runID)
 	ctx = WithJobName(ctx, meta.JobName)
@@ -36,16 +37,16 @@ func Start(ctx context.Context, log *slog.Logger, meta Meta, opts ...Options) (c
 			Operation: meta.Operation,
 		},
 	)
-	
+
 	enriched := log.With(
 		slog.String("job.run_id", runID),
 		slog.String("job.name", meta.JobName),
 		slog.String("job.trigger_type", meta.TriggerType),
-		slog.String("layer", "job"),
-		slog.String("component", meta.Component),
-		slog.String("operation", meta.Operation),
+		slog.String("labels.layer", "job"),
+		slog.String("labels.component", meta.Component),
+		slog.String("labels.operation", meta.Operation),
 	)
-	
+
 	r := &Run{
 		ctx:       ctx,
 		log:       enriched,
@@ -54,7 +55,7 @@ func Start(ctx context.Context, log *slog.Logger, meta Meta, opts ...Options) (c
 		runID:     runID,
 		startedAt: time.Now(),
 	}
-	
+
 	if opt.LogStart && shouldLog(
 		opt.SuccessSampleEvery, opt.ShouldLog, sampling.Decision{
 			EventType: "job.started",
@@ -70,7 +71,7 @@ func Start(ctx context.Context, log *slog.Logger, meta Meta, opts ...Options) (c
 			},
 		)
 	}
-	
+
 	return ctx, r
 }
 

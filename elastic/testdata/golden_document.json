@@ -2,10 +2,10 @@
   "@timestamp": "2026-03-27T10:00:00Z",
   "custom.payload": "{\"tenant_id\":\"t-1\"}",
   "db.statement": "SELECT * FROM users WHERE id=1",
-  "db.table": "users",
+  "db.collection.name": "users",
   "service.environment": "test",
-  "http.request.body": "{\"status\":\"ok\",\"data\":{\"email\":\"a@b.c\"}}",
-  "http.status_code": 200,
+  "http.request.body.content": "{\"status\":\"ok\",\"data\":{\"email\":\"a@b.c\"}}",
+  "http.response.status_code": 200,
   "log.level": "INFO",
   "message": "golden event"
 }

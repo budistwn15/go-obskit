@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/budistwn15/go-obskit/adapters/fiberx"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/adapters/fiberx/v2"
+	"github.com/budistwn15/go-obskit/v2/logger"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -14,7 +14,7 @@ func main() {
 			Level:       logger.LevelInfo,
 		},
 	)
-	
+
 	app := fiber.New()
 	app.Use(fiberx.Middleware(log, fiberx.DefaultOptions()))
 	app.Get(
@@ -22,6 +22,6 @@ func main() {
 			return c.JSON(fiber.Map{"ok": true})
 		},
 	)
-	
+
 	_ = app.Listen(":8082")
 }

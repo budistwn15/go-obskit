@@ -7,7 +7,7 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 // Config controls the common stdout logger. Output defaults to os.Stdout.

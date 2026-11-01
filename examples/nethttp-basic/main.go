@@ -3,8 +3,8 @@ package main
 import (
 	"net/http"
 
-	"github.com/budistwn15/go-obskit/adapters/nethttp"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/adapters/nethttp/v2"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func main() {
@@ -15,7 +15,7 @@ func main() {
 			Level:       logger.LevelInfo,
 		},
 	)
-	
+
 	opts := nethttp.DefaultOptions()
 	mux := http.NewServeMux()
 	mux.HandleFunc(
@@ -24,6 +24,6 @@ func main() {
 			_, _ = w.Write([]byte("ok"))
 		},
 	)
-	
+
 	_ = http.ListenAndServe(":8080", nethttp.Middleware(log, opts)(mux))
 }

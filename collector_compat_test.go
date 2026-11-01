@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	obskit "github.com/budistwn15/go-obskit"
+	obskit "github.com/budistwn15/go-obskit/v2"
 )
 
 func TestJSONLineCollectorCompatibility(t *testing.T) {

@@ -8,11 +8,11 @@ import (
 	"log/slog"
 	"testing"
 
-	obskit "github.com/budistwn15/go-obskit"
-	"github.com/budistwn15/go-obskit/elastic"
-	"github.com/budistwn15/go-obskit/httpsink"
-	"github.com/budistwn15/go-obskit/logger"
-	"github.com/budistwn15/go-obskit/lokisink"
+	obskit "github.com/budistwn15/go-obskit/v2"
+	"github.com/budistwn15/go-obskit/v2/elastic"
+	"github.com/budistwn15/go-obskit/v2/httpsink"
+	"github.com/budistwn15/go-obskit/v2/logger"
+	"github.com/budistwn15/go-obskit/v2/lokisink"
 )
 
 var (

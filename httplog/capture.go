@@ -52,6 +52,23 @@ func NormalizeQuery(values url.Values, denylist []string) map[string]any {
 	return NormalizeQueryValues(values, denylist)
 }
 
+// SafeURL removes credentials, query values, and fragments from a logged URL.
+func SafeURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		if i := strings.IndexAny(raw, "?#"); i >= 0 {
+			return raw[:i]
+		}
+		return raw
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	u.RawFragment = ""
+	return u.String()
+}
+
 func Duration(start time.Time, end time.Time) time.Duration {
 	if end.Before(start) {
 		return 0

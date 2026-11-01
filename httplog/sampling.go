@@ -1,6 +1,6 @@
 package httplog
 
-import "github.com/budistwn15/go-obskit/sampling"
+import "github.com/budistwn15/go-obskit/v2/sampling"
 
 // SuccessSampler deterministically samples high-volume successful complete logs.
 // Important signals (errors and slow events) always pass through.

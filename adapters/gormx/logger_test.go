@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/logger"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
@@ -78,16 +78,10 @@ func TestSlowQueryDetection(t *testing.T) {
 		t.Fatalf("expected query type SELECT, got=%v", last[FieldDBQueryType])
 	}
 	if last[FieldDBTable] != "users" {
-		t.Fatalf("expected db.table users, got=%v", last[FieldDBTable])
+		t.Fatalf("expected db.collection.name users, got=%v", last[FieldDBTable])
 	}
-	if slow, ok := last["slow"].(bool); !ok || !slow {
-		t.Fatalf("expected slow=true, got=%v", last["slow"])
-	}
-	if _, ok := last["slow_threshold_ms"]; !ok {
-		t.Fatalf("expected slow_threshold_ms field")
-	}
-	if _, ok := last["threshold_ms"]; !ok {
-		t.Fatalf("expected threshold_ms field")
+	if slow, ok := last["event.slow"].(bool); !ok || !slow {
+		t.Fatalf("expected event.slow=true, got=%v", last["event.slow"])
 	}
 }
 
@@ -119,7 +113,7 @@ func TestErrorLogging(t *testing.T) {
 		t.Fatalf("expected query type SELECT")
 	}
 	if last[FieldDBTable] != "invoices" {
-		t.Fatalf("expected db.table invoices, got=%v", last[FieldDBTable])
+		t.Fatalf("expected db.collection.name invoices, got=%v", last[FieldDBTable])
 	}
 	if last[FieldDBSystem] != "sql" {
 		t.Fatalf("expected default db.system=sql, got=%v", last[FieldDBSystem])
@@ -337,7 +331,7 @@ func TestSuccessLogsQueryWithLogSQLOnSuccess(t *testing.T) {
 		t.Fatalf("expected db.statement on success when LogSQLOnSuccess=true")
 	}
 	if last[FieldDBResultStatus] != "success" {
-		t.Fatalf("expected db.result_status=success")
+		t.Fatalf("expected event.outcome=success")
 	}
 }
 

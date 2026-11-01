@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func BenchmarkLoggerWithElasticDisabled(b *testing.B) {

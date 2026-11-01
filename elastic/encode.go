@@ -49,12 +49,12 @@ func applyAttr(m map[string]any, attr slog.Attr) {
 }
 
 func enrichDocument(doc map[string]any) {
-	if _, exists := doc["db.table"]; exists {
+	if _, exists := doc["db.collection.name"]; exists {
 		return
 	}
 	stmt, _ := doc["db.statement"].(string)
 	if table := extractTableFromSQL(stmt); table != "" {
-		doc["db.table"] = table
+		doc["db.collection.name"] = table
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func parseLines(t *testing.T, raw string) []map[string]any {
@@ -77,10 +77,10 @@ func TestMiddleware_CorrelationPropagationAndBodyRestore(t *testing.T) {
 		t.Fatalf("expected log events")
 	}
 	last := logs[len(logs)-1]
-	if last["duration_ms"] == nil {
-		t.Fatalf("duration_ms must exist")
+	if last["event.duration"] == nil {
+		t.Fatalf("event.duration must exist")
 	}
-	if int(last["http.status_code"].(float64)) != http.StatusCreated {
+	if int(last["http.response.status_code"].(float64)) != http.StatusCreated {
 		t.Fatalf("status code must be logged")
 	}
 }
@@ -115,7 +115,7 @@ func TestMiddleware_RecordsFirstResponseStatus(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 
 	logs := parseLines(t, buf.String())
-	if got := int(logs[len(logs)-1]["http.status_code"].(float64)); got != http.StatusCreated {
+	if got := int(logs[len(logs)-1]["http.response.status_code"].(float64)); got != http.StatusCreated {
 		t.Fatalf("logged status = %d, want first status %d", got, http.StatusCreated)
 	}
 }
@@ -164,11 +164,8 @@ func TestMiddleware_SuccessSamplingKeepsSlow(t *testing.T) {
 		t.Fatalf("slow events should not be sampled out")
 	}
 	last := logs[len(logs)-1]
-	if slow, ok := last["slow"].(bool); !ok || !slow {
+	if slow, ok := last["event.slow"].(bool); !ok || !slow {
 		t.Fatalf("expected slow=true")
-	}
-	if _, ok := last["threshold_ms"]; !ok {
-		t.Fatalf("expected threshold_ms")
 	}
 }
 
@@ -209,10 +206,10 @@ func TestMiddleware_ForensicCapturesBodiesAndHeadersOnSuccess(t *testing.T) {
 		t.Fatalf("expected logs")
 	}
 	last := logs[len(logs)-1]
-	if _, ok := last["http.request.body"]; !ok {
+	if _, ok := last["http.request.body.content"]; !ok {
 		t.Fatalf("expected request body")
 	}
-	if _, ok := last["http.response.body"]; !ok {
+	if _, ok := last["http.response.body.content"]; !ok {
 		t.Fatalf("expected response body on success")
 	}
 	reqHeaders, ok := last["http.request.headers"].(map[string]any)

@@ -74,6 +74,9 @@ func (m *Middleware) ship(ctx context.Context, batch []slog.Record) error {
 	if err != nil {
 		return err
 	}
+	if m.cfg.MaxBatchBytes > 0 && len(payload) > m.cfg.MaxBatchBytes {
+		return fmt.Errorf("http sink batch exceeds %d bytes", m.cfg.MaxBatchBytes)
+	}
 	var allErr error
 	for attempt := 0; attempt <= m.cfg.MaxRetries; attempt++ {
 		err := m.send(ctx, payload)
@@ -124,12 +127,12 @@ func (m *Middleware) send(ctx context.Context, payload []byte) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 500 || resp.StatusCode == 429 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("sink server status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		return fmt.Errorf("sink server status=%d", resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return permanentError{fmt.Errorf("sink rejected status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		return permanentError{fmt.Errorf("sink rejected status=%d", resp.StatusCode)}
 	}
 	return nil
 }

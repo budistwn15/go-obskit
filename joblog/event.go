@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/errorsx"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/errorsx"
 )
 
 type event struct {
@@ -16,7 +16,7 @@ type event struct {
 }
 
 func buildStartedEvent(ctx context.Context, runID string, meta Meta, opts Options, startedAt time.Time) event {
-	attrs := baseAttrs(ctx, runID, meta)
+	attrs := append(eventEnvelope("process", "unknown"), baseAttrs(ctx, runID, meta)...)
 	if opts.IncludeTiming {
 		attrs = append(attrs, slog.Time("job.started_at", startedAt.UTC()))
 	}
@@ -30,22 +30,17 @@ func buildStartedEvent(ctx context.Context, runID string, meta Meta, opts Option
 func buildCompletedEvent(
 	ctx context.Context, runID string, meta Meta, counts Counts, startedAt, endedAt time.Time, opts Options,
 ) event {
-	attrs := baseAttrs(ctx, runID, meta)
+	attrs := append(eventEnvelope("process", "success"), baseAttrs(ctx, runID, meta)...)
 	if opts.IncludeTiming {
 		duration := endedAt.Sub(startedAt)
 		attrs = append(
 			attrs,
-			slog.Int64("duration_ms", duration.Milliseconds()),
+			slog.Int64("event.duration", duration.Nanoseconds()),
 			slog.Time("job.started_at", startedAt.UTC()),
 			slog.Time("job.ended_at", endedAt.UTC()),
 		)
 		if opts.SlowThreshold > 0 {
-			attrs = append(
-				attrs,
-				slog.Bool("slow", duration >= opts.SlowThreshold),
-				slog.Int64("threshold_ms", opts.SlowThreshold.Milliseconds()),
-				slog.Int64("slow_threshold_ms", opts.SlowThreshold.Milliseconds()),
-			)
+			attrs = append(attrs, slog.Bool("event.slow", duration >= opts.SlowThreshold))
 		}
 	}
 	if opts.IncludeCounts {
@@ -61,22 +56,17 @@ func buildCompletedEvent(
 func buildFailedEvent(
 	ctx context.Context, runID string, meta Meta, counts Counts, startedAt, endedAt time.Time, err error, opts Options,
 ) event {
-	attrs := baseAttrs(ctx, runID, meta)
+	attrs := append(eventEnvelope("process", "failure"), baseAttrs(ctx, runID, meta)...)
 	if opts.IncludeTiming {
 		duration := endedAt.Sub(startedAt)
 		attrs = append(
 			attrs,
-			slog.Int64("duration_ms", duration.Milliseconds()),
+			slog.Int64("event.duration", duration.Nanoseconds()),
 			slog.Time("job.started_at", startedAt.UTC()),
 			slog.Time("job.ended_at", endedAt.UTC()),
 		)
 		if opts.SlowThreshold > 0 {
-			attrs = append(
-				attrs,
-				slog.Bool("slow", duration >= opts.SlowThreshold),
-				slog.Int64("threshold_ms", opts.SlowThreshold.Milliseconds()),
-				slog.Int64("slow_threshold_ms", opts.SlowThreshold.Milliseconds()),
-			)
+			attrs = append(attrs, slog.Bool("event.slow", duration >= opts.SlowThreshold))
 		}
 	}
 	if opts.IncludeCounts {
@@ -110,13 +100,13 @@ func buildFailedEvent(
 }
 
 func buildRetryEvent(ctx context.Context, runID string, meta Meta, retry RetryMeta, opts Options) event {
-	attrs := baseAttrs(ctx, runID, meta)
+	attrs := append(eventEnvelope("process", "unknown"), baseAttrs(ctx, runID, meta)...)
 	attrs = append(
 		attrs,
 		slog.Int("job.retry_attempt", retry.Attempt),
 		slog.Int("job.retry_max_attempts", retry.MaxAttempts),
 		slog.String("job.retry_reason", retry.Reason),
-		slog.Int64("job.retry_delay_ms", retry.Delay.Milliseconds()),
+		slog.Int64("job.retry.delay", retry.Delay.Nanoseconds()),
 	)
 	return event{
 		level: slog.LevelWarn,
@@ -130,9 +120,9 @@ func baseAttrs(ctx context.Context, runID string, meta Meta) []slog.Attr {
 		slog.String("job.run_id", runID),
 		slog.String("job.name", meta.JobName),
 		slog.String("job.trigger_type", meta.TriggerType),
-		slog.String("component", meta.Component),
-		slog.String("operation", meta.Operation),
-		slog.String("layer", "job"),
+		slog.String("labels.component", meta.Component),
+		slog.String("labels.operation", meta.Operation),
+		slog.String("labels.layer", "job"),
 	}
 	if corr := correlation.ID(ctx); corr != "" {
 		attrs = append(attrs, slog.String("correlation.id", corr))
@@ -141,6 +131,10 @@ func baseAttrs(ctx context.Context, runID string, meta Meta) []slog.Attr {
 		attrs = append(attrs, slog.Any("job.fields", meta.Fields))
 	}
 	return attrs
+}
+
+func eventEnvelope(category, outcome string) []slog.Attr {
+	return []slog.Attr{slog.String("event.category", category), slog.String("event.outcome", outcome)}
 }
 
 func countAttrs(c Counts) []slog.Attr {

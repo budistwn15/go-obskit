@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/budistwn15/go-obskit/sampling"
+	"github.com/budistwn15/go-obskit/v2/sampling"
 	gormlogger "gorm.io/gorm/logger"
 )
 
@@ -57,6 +57,7 @@ func DefaultOptions() Options {
 
 func normalizeOptions(opts Options) Options {
 	def := DefaultOptions()
+	opts.RecoverInternally = true
 	if opts.Level == 0 {
 		opts.Level = def.Level
 	}

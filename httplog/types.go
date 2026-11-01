@@ -46,6 +46,9 @@ type ResponseMeta struct {
 }
 
 type EventMeta struct {
+	Category string
+	Outcome  string
+
 	CorrelationID string
 	RequestID     string
 	TraceID       string

@@ -9,6 +9,8 @@ type Event struct {
 }
 
 func BuildRequestStart(req RequestMeta, ev EventMeta) Event {
+	ev.Category = "web"
+	ev.Outcome = "unknown"
 	attrs := joinAttrs(
 		slog.String("event.action", "http.request.start"),
 		RequestAttrs(NormalizeRequestMeta(req)),
@@ -23,6 +25,11 @@ func BuildRequestStart(req RequestMeta, ev EventMeta) Event {
 }
 
 func BuildRequestComplete(req RequestMeta, res ResponseMeta, ev EventMeta) Event {
+	ev.Category = "web"
+	ev.Outcome = "success"
+	if res.StatusCode >= 400 {
+		ev.Outcome = "failure"
+	}
 	attrs := joinAttrs(
 		slog.String("event.action", "http.request.complete"),
 		RequestAttrs(NormalizeRequestMeta(req)),
@@ -37,6 +44,8 @@ func BuildRequestComplete(req RequestMeta, res ResponseMeta, ev EventMeta) Event
 }
 
 func BuildRequestError(req RequestMeta, res ResponseMeta, ev EventMeta) Event {
+	ev.Category = "web"
+	ev.Outcome = "failure"
 	attrs := joinAttrs(
 		slog.String("event.action", "http.request.error"),
 		RequestAttrs(NormalizeRequestMeta(req)),

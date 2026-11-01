@@ -4,8 +4,10 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func BenchmarkLoggerInfo(b *testing.B) {
@@ -19,6 +21,40 @@ func BenchmarkLoggerInfo(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		l.Info("ping")
 	}
+}
+
+func BenchmarkLoggerOutput(b *testing.B) {
+	b.Run("discard", func(b *testing.B) {
+		benchmarkLoggerOutput(b, io.Discard)
+	})
+	b.Run("dev-null-file", func(b *testing.B) {
+		file, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+		if err != nil {
+			b.Fatal(err)
+		}
+		defer file.Close()
+		benchmarkLoggerOutput(b, file)
+	})
+	b.Run("slow-writer", func(b *testing.B) {
+		benchmarkLoggerOutput(b, slowWriter{delay: 100 * time.Microsecond})
+	})
+}
+
+func benchmarkLoggerOutput(b *testing.B, output io.Writer) {
+	l := New(Config{ServiceName: "bench", Environment: "production", Output: output})
+	b.ResetTimer()
+	for b.Loop() {
+		l.Info("ping")
+	}
+}
+
+type slowWriter struct {
+	delay time.Duration
+}
+
+func (w slowWriter) Write(p []byte) (int, error) {
+	time.Sleep(w.delay)
+	return len(p), nil
 }
 
 func BenchmarkLoggerInfoContextMeta(b *testing.B) {

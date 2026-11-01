@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/httplog"
-	"github.com/budistwn15/go-obskit/sampling"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/httplog"
+	"github.com/budistwn15/go-obskit/v2/sampling"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
@@ -100,7 +100,8 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 	}
 	attrs := []slog.Attr{
 		slog.String(FieldDBSystem, dbSystem),
-		slog.Int64(FieldDurationMS, elapsed.Milliseconds()),
+		slog.Int64(FieldDurationMS, elapsed.Nanoseconds()),
+		slog.String("event.category", "database"),
 		slog.String(FieldLayer, "repository"),
 		slog.String(FieldComponent, "gorm"),
 		slog.String(FieldOperation, "db.query"),
@@ -175,13 +176,7 @@ func (l *slogGormLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 			attrs = append(attrs, slog.String(FieldDBStatement, statement))
 			attrs = append(attrs, slog.Bool(FieldDBStatementTruncated, statementTruncated))
 		}
-		attrs = append(
-			attrs,
-			slog.String(FieldEvent, "db.query.slow"),
-			slog.Bool("slow", true),
-			slog.Int64("threshold_ms", l.opts.SlowThreshold.Milliseconds()),
-			slog.Int64("slow_threshold_ms", l.opts.SlowThreshold.Milliseconds()),
-		)
+		attrs = append(attrs, slog.String(FieldEvent, "db.query.slow"), slog.Bool("event.slow", true))
 		if !shouldLog(l.sampler, l.opts.ShouldLog, decision, l.opts.RecoverInternally) {
 			return
 		}

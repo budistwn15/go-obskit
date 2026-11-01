@@ -12,10 +12,10 @@ const (
 	FieldTraceID        = "trace.id"
 	FieldSpanID         = "span.id"
 	FieldTransactionID  = "transaction.id"
-	FieldLayer          = "layer"
-	FieldComponent      = "component"
-	FieldOperation      = "operation"
-	FieldDurationMS     = "duration_ms"
+	FieldLayer          = "labels.layer"
+	FieldComponent      = "labels.component"
+	FieldOperation      = "labels.operation"
+	FieldDurationMS     = "event.duration"
 )
 
 const DefaultSchemaVersion = "1"

@@ -4,7 +4,7 @@ package outbound
 import (
 	"time"
 
-	"github.com/budistwn15/go-obskit/httplog"
+	"github.com/budistwn15/go-obskit/v2/httplog"
 )
 
 type DecisionHook func(meta httplog.DecisionMeta) bool
@@ -48,7 +48,7 @@ func DefaultOptions() Options {
 	return Options{
 		CorrelationHeader: base.CorrelationHeader,
 
-		CaptureQuery:        true,
+		CaptureQuery:        false,
 		CaptureHeaders:      false,
 		CaptureRequestBody:  false,
 		CaptureResponseBody: false,
@@ -75,6 +75,7 @@ func DefaultOptions() Options {
 
 func normalizeOptions(opts Options) Options {
 	def := DefaultOptions()
+	opts.RecoverInternally = true
 	if opts.CorrelationHeader == "" {
 		opts.CorrelationHeader = def.CorrelationHeader
 	}

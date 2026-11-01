@@ -1,9 +1,9 @@
-module github.com/budistwn15/go-obskit/adapters/fiberx
+module github.com/budistwn15/go-obskit/adapters/fiberx/v2
 
 go 1.26
 
 require (
-	github.com/budistwn15/go-obskit v0.0.0
+	github.com/budistwn15/go-obskit/v2 v2.0.0
 	github.com/gofiber/fiber/v2 v2.52.12
 )
 
@@ -21,4 +21,4 @@ require (
 	golang.org/x/sys v0.28.0 // indirect
 )
 
-replace github.com/budistwn15/go-obskit => ../..
+replace github.com/budistwn15/go-obskit/v2 => ../..

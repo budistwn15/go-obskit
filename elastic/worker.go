@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -89,6 +88,9 @@ func (m *Middleware) ship(ctx context.Context, batch []slog.Record) error {
 		body.Write(docJSON)
 		body.WriteByte('\n')
 	}
+	if m.cfg.MaxBatchBytes > 0 && body.Len() > m.cfg.MaxBatchBytes {
+		return fmt.Errorf("elastic batch exceeds %d bytes", m.cfg.MaxBatchBytes)
+	}
 
 	endpoint := m.cfg.Endpoint + "/_bulk"
 	var allErr error
@@ -147,12 +149,24 @@ func (m *Middleware) sendBulk(ctx context.Context, endpoint string, payload []by
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 500 || resp.StatusCode == 429 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("bulk server status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		return fmt.Errorf("bulk server status=%d", resp.StatusCode)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return permanentError{fmt.Errorf("bulk rejected status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		return permanentError{fmt.Errorf("bulk rejected status=%d", resp.StatusCode)}
+	}
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+	var result struct {
+		Errors bool `json:"errors"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return permanentError{fmt.Errorf("bulk response invalid: %w", err)}
+	}
+	if result.Errors {
+		return permanentError{errors.New("bulk response contains failed items")}
 	}
 	return nil
 }

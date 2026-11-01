@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func parseLogs(t *testing.T, raw string) []map[string]any {
@@ -168,14 +168,8 @@ func TestSlowThresholdFields(t *testing.T) {
 
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
-	if slow, ok := last["slow"].(bool); !ok || !slow {
-		t.Fatalf("expected slow=true, got=%v", last["slow"])
-	}
-	if _, ok := last["slow_threshold_ms"]; !ok {
-		t.Fatalf("expected slow_threshold_ms")
-	}
-	if _, ok := last["threshold_ms"]; !ok {
-		t.Fatalf("expected threshold_ms")
+	if slow, ok := last["event.slow"].(bool); !ok || !slow {
+		t.Fatalf("expected event.slow=true, got=%v", last["event.slow"])
 	}
 }
 
@@ -228,7 +222,7 @@ func TestSlowCompletedNotSampledOut(t *testing.T) {
 	foundSlowComplete := false
 	for _, l := range logs {
 		if l["event.action"] == "job.completed" {
-			if slow, ok := l["slow"].(bool); ok && slow {
+			if slow, ok := l["event.slow"].(bool); ok && slow {
 				foundSlowComplete = true
 			}
 		}

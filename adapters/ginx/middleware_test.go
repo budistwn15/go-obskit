@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 	"github.com/gin-gonic/gin"
 )
 

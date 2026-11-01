@@ -4,7 +4,7 @@ package otel
 import (
 	"context"
 
-	obskit "github.com/budistwn15/go-obskit"
+	obskit "github.com/budistwn15/go-obskit/v2"
 	"go.opentelemetry.io/otel/trace"
 )
 

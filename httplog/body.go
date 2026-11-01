@@ -3,7 +3,7 @@ package httplog
 import (
 	"strings"
 
-	"github.com/budistwn15/go-obskit/redact"
+	"github.com/budistwn15/go-obskit/v2/redact"
 )
 
 var defaultRedactRules = redact.DefaultPIIRules()

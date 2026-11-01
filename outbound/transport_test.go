@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/httplog"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/httplog"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -68,8 +68,8 @@ func TestCorrelationPropagationAndDuration(t *testing.T) {
 	}
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
-	if last["duration_ms"] == nil {
-		t.Fatalf("duration_ms must be logged")
+	if last["event.duration"] == nil {
+		t.Fatalf("event.duration must be logged")
 	}
 }
 
@@ -121,7 +121,7 @@ func TestRequestBodyRestoreAndRedactionTruncation(t *testing.T) {
 	logs := parseLogs(t, buf.String())
 	found := false
 	for _, l := range logs {
-		if v, ok := l["http.request.body"].(string); ok {
+		if v, ok := l["http.request.body.content"].(string); ok {
 			found = true
 			if strings.Contains(v, "secret-value") {
 				t.Fatalf("expected redacted request body")
@@ -196,7 +196,7 @@ func TestResponseBodyRestore(t *testing.T) {
 	}
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
-	if body, ok := last["http.response.body"].(string); !ok || body == "" {
+	if body, ok := last["http.response.body.content"].(string); !ok || body == "" {
 		t.Fatalf("expected response body log")
 	} else if strings.Contains(body, "super-secret-token") {
 		t.Fatalf("expected redacted response body")
@@ -253,10 +253,10 @@ func TestDefaultLowNoise(t *testing.T) {
 
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
-	if _, ok := last["http.request.body"]; ok {
+	if _, ok := last["http.request.body.content"]; ok {
 		t.Fatalf("request body should not be logged by default")
 	}
-	if _, ok := last["http.response.body"]; ok {
+	if _, ok := last["http.response.body.content"]; ok {
 		t.Fatalf("response body should not be logged by default")
 	}
 }
@@ -389,14 +389,8 @@ func TestSlowFieldOnComplete(t *testing.T) {
 
 	logs := parseLogs(t, buf.String())
 	last := logs[len(logs)-1]
-	if slow, ok := last["slow"].(bool); !ok || !slow {
+	if slow, ok := last["event.slow"].(bool); !ok || !slow {
 		t.Fatalf("expected slow=true, got=%v", last["slow"])
-	}
-	if _, ok := last["slow_threshold_ms"]; !ok {
-		t.Fatalf("expected slow_threshold_ms in event")
-	}
-	if _, ok := last["threshold_ms"]; !ok {
-		t.Fatalf("expected threshold_ms in event")
 	}
 }
 
@@ -456,7 +450,7 @@ func TestSuccessSamplingKeepsErrorsAndSlow(t *testing.T) {
 		t.Fatalf("slow complete logs must not be sampled out")
 	}
 	last := logs[len(logs)-1]
-	if slow, ok := last["slow"].(bool); !ok || !slow {
+	if slow, ok := last["event.slow"].(bool); !ok || !slow {
 		t.Fatalf("expected slow=true on retained slow log")
 	}
 }

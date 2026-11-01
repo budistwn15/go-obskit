@@ -137,6 +137,22 @@ func TestSafeHandlerNoPanic(t *testing.T) {
 	l.Log(context.Background(), slog.LevelInfo, "no panic")
 }
 
+type panicDerivedHandler struct{ slog.Handler }
+
+func (panicDerivedHandler) WithAttrs([]slog.Attr) slog.Handler { panic("attrs") }
+func (panicDerivedHandler) WithGroup(string) slog.Handler      { panic("group") }
+
+func TestSafeHandlerDerivationFallsBack(t *testing.T) {
+	base := slog.NewJSONHandler(io.Discard, nil)
+	h := newSafeHandler(panicDerivedHandler{Handler: base})
+	if got := h.WithAttrs([]slog.Attr{slog.String("key", "value")}); got == nil {
+		t.Fatal("WithAttrs returned nil after panic")
+	}
+	if got := h.WithGroup("group"); got == nil {
+		t.Fatal("WithGroup returned nil after panic")
+	}
+}
+
 func TestConcurrentUse(t *testing.T) {
 	var buf bytes.Buffer
 	l := New(Config{

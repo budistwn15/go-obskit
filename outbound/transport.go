@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/budistwn15/go-obskit/correlation"
-	"github.com/budistwn15/go-obskit/httplog"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/correlation"
+	"github.com/budistwn15/go-obskit/v2/httplog"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 type transport struct {
@@ -80,6 +80,8 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 				Attrs: outboundAttrs(
 					"http.outbound.start", httplog.RequestAttrs(reqMeta), nil,
 					httplog.EventAttrs(httplog.EventMeta{
+						Category:      "web",
+						Outcome:       "unknown",
 						CorrelationID: corrID,
 						RequestID:     requestID,
 						TraceID:       traceID,
@@ -101,6 +103,8 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	duration := time.Since(start)
 	evMeta := httplog.EventMeta{
+		Category:        "web",
+		Outcome:         "success",
 		CorrelationID:   corrID,
 		RequestID:       requestID,
 		TraceID:         traceID,
@@ -127,6 +131,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 			evMeta.ErrorKind = classifyError(err)
 			evMeta.ErrorMessage = err.Error()
+			evMeta.Outcome = "failure"
 			event := httplog.Event{
 				Message: "outbound http request failed",
 				Level:   slog.LevelError,
@@ -146,6 +151,9 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	statusCode := 0
 	if resp != nil {
 		statusCode = resp.StatusCode
+	}
+	if statusCode >= 400 {
+		evMeta.Outcome = "failure"
 	}
 	if statusCode < 400 && t.opts.LogRequestComplete && t.opts.ShouldLogComplete == nil && !evMeta.Slow &&
 		!t.sampler.ShouldLog(httplog.DecisionMeta{

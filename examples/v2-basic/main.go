@@ -3,7 +3,7 @@ package main
 import (
 	"log/slog"
 
-	obskit "github.com/budistwn15/go-obskit"
+	obskit "github.com/budistwn15/go-obskit/v2"
 )
 
 func main() {

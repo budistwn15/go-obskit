@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/budistwn15/go-obskit/logger"
-	"github.com/budistwn15/go-obskit/outbound"
+	"github.com/budistwn15/go-obskit/v2/logger"
+	"github.com/budistwn15/go-obskit/v2/outbound"
 )
 
 func main() {
@@ -16,10 +16,10 @@ func main() {
 			Level:       logger.LevelInfo,
 		},
 	)
-	
+
 	client := &http.Client{Timeout: 5 * time.Second}
 	client = outbound.WrapClient(client, log, outbound.DefaultOptions())
-	
+
 	req, _ := http.NewRequest(http.MethodGet, "https://example.com", nil)
 	_, _ = client.Do(req)
 }

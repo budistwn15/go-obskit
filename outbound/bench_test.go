@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func BenchmarkTransportRoundTripMinimal(b *testing.B) {
@@ -29,7 +29,7 @@ func BenchmarkTransportRoundTripMinimal(b *testing.B) {
 	)
 	tr := NewTransport(rt, log, DefaultOptions())
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/health", nil)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		resp, err := tr.RoundTrip(req.Clone(req.Context()))
@@ -54,7 +54,7 @@ func BenchmarkTransportRoundTripWithBodyCapture(b *testing.B) {
 	opts.CaptureResponseBody = true
 	opts.LogErrorBodies = true
 	opts.MaxBodyBytes = 128
-	
+
 	rt := roundTripFunc(
 		func(req *http.Request) (*http.Response, error) {
 			return &http.Response{
@@ -65,7 +65,7 @@ func BenchmarkTransportRoundTripWithBodyCapture(b *testing.B) {
 		},
 	)
 	tr := NewTransport(rt, log, opts)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		req, _ := http.NewRequest(
@@ -91,7 +91,7 @@ func BenchmarkTransportRoundTripSampledSuccess(b *testing.B) {
 	)
 	opts := DefaultOptions()
 	opts.SuccessSampleEvery = 10
-	
+
 	rt := roundTripFunc(
 		func(req *http.Request) (*http.Response, error) {
 			return &http.Response{
@@ -103,7 +103,7 @@ func BenchmarkTransportRoundTripSampledSuccess(b *testing.B) {
 	)
 	tr := NewTransport(rt, log, opts)
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/health", nil)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		resp, err := tr.RoundTrip(req.Clone(req.Context()))

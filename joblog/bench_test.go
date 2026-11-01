@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func BenchmarkJobLifecycle(b *testing.B) {
@@ -22,7 +22,7 @@ func BenchmarkJobLifecycle(b *testing.B) {
 		Component:   "scheduler",
 		Operation:   "sync_users",
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, run := Start(context.Background(), log, meta)
@@ -48,7 +48,7 @@ func BenchmarkJobLifecycleSampledComplete(b *testing.B) {
 	}
 	opts := DefaultOptions()
 	opts.SuccessSampleEvery = 10
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, run := Start(context.Background(), log, meta, opts)

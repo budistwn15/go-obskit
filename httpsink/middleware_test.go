@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func TestDisabledSinkDoesNotBreakLogging(t *testing.T) {
@@ -208,5 +208,41 @@ func TestEnqueueAllocationBudget(t *testing.T) {
 		<-mw.queue
 	}); got != 0 {
 		t.Fatalf("enqueue allocations = %.2f, want 0", got)
+	}
+}
+
+func TestEnqueueSnapshotsMutableAttrs(t *testing.T) {
+	mw := benchmarkMiddleware(1)
+	payload := map[string]any{"state": "before"}
+	record := slog.NewRecord(time.Unix(0, 0), slog.LevelInfo, "snapshot", 0)
+	record.AddAttrs(slog.Any("payload", payload))
+	mw.enqueue(record)
+	payload["state"] = "after"
+
+	frozen := <-mw.queue
+	raw, err := marshalBatch(FormatNDJSON, []slog.Record{frozen}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "after") || !strings.Contains(string(raw), "before") {
+		t.Fatalf("mutable attr was not snapshotted: %s", raw)
+	}
+}
+
+func TestEnqueueDropsOversizedRecord(t *testing.T) {
+	mw := benchmarkMiddleware(1)
+	mw.cfg.MaxRecordBytes = 128
+	mw.enqueue(slog.NewRecord(time.Unix(0, 0), slog.LevelInfo, strings.Repeat("x", 128), 0))
+	stats := mw.Stats()
+	if stats.Oversized != 1 || stats.Dropped != 1 || len(mw.queue) != 0 {
+		t.Fatalf("oversized record stats = %+v queue=%d", stats, len(mw.queue))
+	}
+}
+
+func TestShipRejectsOversizedBatch(t *testing.T) {
+	mw := &Middleware{cfg: Config{Format: FormatNDJSON, MaxBatchBytes: 32}}
+	record := slog.NewRecord(time.Unix(0, 0), slog.LevelInfo, "too large", 0)
+	if err := mw.ship(context.Background(), []slog.Record{record}); err == nil {
+		t.Fatal("expected oversized batch error")
 	}
 }

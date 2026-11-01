@@ -1,7 +1,7 @@
 package joblog
 
 import "time"
-import "github.com/budistwn15/go-obskit/sampling"
+import "github.com/budistwn15/go-obskit/v2/sampling"
 
 type Options struct {
 	LogStart           bool

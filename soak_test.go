@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/budistwn15/go-obskit/httpsink"
-	"github.com/budistwn15/go-obskit/logger"
+	"github.com/budistwn15/go-obskit/v2/httpsink"
+	"github.com/budistwn15/go-obskit/v2/logger"
 )
 
 func TestSoakStdout(t *testing.T) {
@@ -75,7 +75,7 @@ func soakDuration(t *testing.T) time.Duration {
 	t.Helper()
 	raw := os.Getenv("OBSKIT_SOAK_DURATION")
 	if raw == "" {
-		t.Skip("set OBSKIT_SOAK_DURATION, for example 30m")
+		t.Skip("set OBSKIT_SOAK_DURATION, for example 60s")
 	}
 	duration, err := time.ParseDuration(raw)
 	if err != nil || duration <= 0 {

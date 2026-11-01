@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"time"
 )
 
 func New(cfg Config) *slog.Logger {
@@ -124,7 +125,7 @@ func (h *contextHandler) Handle(ctx context.Context, record slog.Record) error {
 			record.AddAttrs(slog.String(FieldOperation, meta.Operation))
 		}
 		if meta.DurationMS > 0 {
-			record.AddAttrs(slog.Int64(FieldDurationMS, meta.DurationMS))
+			record.AddAttrs(slog.Int64(FieldDurationMS, meta.DurationMS*int64(time.Millisecond)))
 		}
 	}
 	if correlationID := CorrelationID(ctx); correlationID != "" && (meta.CorrelationID == "") {
@@ -170,12 +171,26 @@ func (h *safeHandler) Handle(ctx context.Context, record slog.Record) (err error
 	return h.next.Handle(ctx, record)
 }
 
-func (h *safeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+func (h *safeHandler) WithAttrs(attrs []slog.Attr) (out slog.Handler) {
+	out = h
+	if h == nil || h.next == nil {
+		return out
+	}
 	defer func() { _ = recover() }()
-	return &safeHandler{next: h.next.WithAttrs(attrs)}
+	if next := h.next.WithAttrs(attrs); next != nil {
+		out = &safeHandler{next: next}
+	}
+	return out
 }
 
-func (h *safeHandler) WithGroup(name string) slog.Handler {
+func (h *safeHandler) WithGroup(name string) (out slog.Handler) {
+	out = h
+	if h == nil || h.next == nil {
+		return out
+	}
 	defer func() { _ = recover() }()
-	return &safeHandler{next: h.next.WithGroup(name)}
+	if next := h.next.WithGroup(name); next != nil {
+		out = &safeHandler{next: next}
+	}
+	return out
 }

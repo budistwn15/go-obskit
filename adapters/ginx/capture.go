@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/budistwn15/go-obskit/httplog"
+	"github.com/budistwn15/go-obskit/v2/httplog"
 	"github.com/gin-gonic/gin"
 )
 
@@ -80,7 +80,7 @@ func captureRequestMeta(c *gin.Context, opts Options) httplog.RequestMeta {
 		Host:   c.Request.Host,
 		Path:   c.Request.URL.Path,
 		Route:  c.FullPath(),
-		URL:    c.Request.URL.String(),
+		URL:    httplog.SafeURL(c.Request.URL.String()),
 	}
 	httplog.FillSourceFromRemoteAddr(&meta, c.Request.RemoteAddr)
 	httplog.FillTargetFromRequest(&meta, c.Request)

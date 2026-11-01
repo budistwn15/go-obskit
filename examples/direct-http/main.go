@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	obskit "github.com/budistwn15/go-obskit"
-	"github.com/budistwn15/go-obskit/httpsink"
+	obskit "github.com/budistwn15/go-obskit/v2"
+	"github.com/budistwn15/go-obskit/v2/httpsink"
 )
 
 func main() {

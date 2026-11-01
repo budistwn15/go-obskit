@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/budistwn15/go-obskit/httplog"
+	"github.com/budistwn15/go-obskit/v2/httplog"
 )
 
 type bodyCapture struct {
@@ -20,7 +20,7 @@ func captureRequest(req *http.Request, opts Options, captureBody bool) (httplog.
 		Scheme:    req.URL.Scheme,
 		Host:      req.URL.Host,
 		Path:      req.URL.Path,
-		URL:       req.URL.String(),
+		URL:       httplog.SafeURL(req.URL.String()),
 		UserAgent: req.Header.Get("User-Agent"),
 	}
 	httplog.FillTargetFromURL(&meta, req.URL)
