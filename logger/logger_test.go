@@ -66,6 +66,9 @@ func TestNew_CustomSchemaVersion(t *testing.T) {
 }
 
 func TestBasicLoggingAllocationBudget(t *testing.T) {
+	if raceEnabled {
+		t.Skip("race instrumentation changes allocation counts")
+	}
 	log := New(Config{Output: io.Discard})
 	if got := testing.AllocsPerRun(1000, func() { log.Info("budget") }); got != 0 {
 		t.Fatalf("basic logging allocations = %.2f, want 0", got)
